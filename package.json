@@ -2,14 +2,47 @@
   "name": "a9e-swordmancy-simulator",
   "version": "1.0.0",
   "description": "Trial of Swordmancy Simulator and Optimizer for Arknights: Endfield",
-  "main": "index.html",
+  "main": "electron/main.cjs",
+  "author": "A9E Swordmancy Optimizer",
   "scripts": {
-    "dev": "vite --port 3000 --open",
+    "dev": "vite --open",
+    "electron:dev": "concurrently -k \"vite\" \"wait-on http://localhost:3000 && electron .\"",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "pack": "npm run build && electron-builder --dir",
+    "dist:unpacked": "npm run build && powershell -ExecutionPolicy Bypass -File scripts/build-unpacked.ps1",
+    "dist": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win"
+  },
+  "build": {
+    "appId": "com.a9e.swordmancy.optimizer",
+    "productName": "Swordmancy Optimizer",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   },
   "devDependencies": {
-    "vite": "^5.0.0"
+    "concurrently": "^10.0.3",
+    "electron": "^42.4.1",
+    "electron-builder": "^26.15.3",
+    "vite": "^5.0.0",
+    "wait-on": "^9.0.10"
   },
   "dependencies": {
     "jsdom": "^29.1.1"

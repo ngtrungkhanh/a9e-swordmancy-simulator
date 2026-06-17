@@ -109,15 +109,8 @@ class SwordmancySolver {
         // 2. Value of Abandon
         let valAbandon = -Infinity;
         if (hand.length > 0 && f > 0) {
-            const refundedD = d;
+            const refundedD = d + (doubled ? 1 : 0);
             valAbandon = this.solve(a, f - 1, refundedD, [], false);
-            
-            // Apply a penalty when abandoning a doubled trial
-            // Doubled is valuable and finite (only 2 per day), so losing it early has cost
-            if (doubled && hand.length <= 3) {
-                // Penalize by 20-30% when abandoning early with doubled active
-                valAbandon *= 0.75;
-            }
         }
 
         // 3. Value of Draw
@@ -181,13 +174,8 @@ class SwordmancySolver {
         // Calculate EV of ABANDON
         let evAbandon = -Infinity;
         if (hand.length > 0 && f > 0) {
-            const refundedD = d;
+            const refundedD = d + (doubled ? 1 : 0);
             evAbandon = this.solve(a, f - 1, refundedD, [], false);
-            
-            // Apply a penalty when abandoning a doubled trial
-            if (doubled && hand.length <= 3) {
-                evAbandon *= 0.75;
-            }
         }
 
         // Calculate EV of DRAW
@@ -211,26 +199,22 @@ class SwordmancySolver {
             evDouble = this.solve(a, f, d - 1, hand, true);
         }
 
-        // Choose best action
-        let bestAction = 'Draw';
-        let maxEV = -Infinity;
+        // Choose best action. When EVs are effectively tied, prefer the
+        // less risky/less committal action so the live assistant stays practical.
+        const actionCandidates = [
+            { action: 'Stop', ev: evStop },
+            { action: 'Abandon', ev: evAbandon },
+            { action: 'Double', ev: evDouble },
+            { action: 'Draw', ev: evDraw }
+        ];
+        const bestCandidate = actionCandidates.reduce((best, candidate) => {
+            if (candidate.ev === -Infinity) return best;
+            if (!best) return candidate;
+            return candidate.ev > best.ev + 0.000001 ? candidate : best;
+        }, null);
 
-        if (evDraw > maxEV) {
-            maxEV = evDraw;
-            bestAction = 'Draw';
-        }
-        if (evStop > maxEV) {
-            maxEV = evStop;
-            bestAction = 'Stop';
-        }
-        if (evAbandon > maxEV) {
-            maxEV = evAbandon;
-            bestAction = 'Abandon';
-        }
-        if (evDouble > maxEV) {
-            maxEV = evDouble;
-            bestAction = 'Double';
-        }
+        const bestAction = bestCandidate ? bestCandidate.action : 'None';
+        const maxEV = bestCandidate ? bestCandidate.ev : 0;
 
         // Calculate probability distribution for drawing
         const drawProbs = {};

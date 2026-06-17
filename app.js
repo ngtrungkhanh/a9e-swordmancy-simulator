@@ -14,14 +14,16 @@ let trialCompletionTimer = null; // Reference to completion auto-advance timer
 
 // Deck Presets mapping from the game rules
 const DECK_PRESETS = {
-    1: { 1: 5, 2: 5, 3: 5, 4: 8, 5: 5 },
-    2: { 1: 4, 2: 5, 3: 6, 4: 6, 5: 6 },
-    3: { 1: 7, 2: 3, 3: 7, 4: 3, 5: 6 },
+    1: { 1: 5, 2: 5, 3: 5, 4: 8, 5: 6 },
+    2: { 1: 4, 2: 5, 3: 6, 4: 6, 5: 7 },
+    3: { 1: 7, 2: 3, 3: 7, 4: 3, 5: 7 },
     4: { 1: 3, 2: 7, 3: 7, 4: 7, 5: 5 },
     5: { 1: 6, 2: 6, 3: 9, 4: 4, 5: 3 },
-    6: { 1: 4, 2: 5, 3: 4, 4: 8, 5: 6 },
-    7: { 1: 8, 2: 5, 3: 2, 4: 5, 5: 7 }
+    6: { 1: 4, 2: 5, 3: 4, 4: 8, 5: 7 },
+    7: { 1: 8, 2: 5, 3: 2, 4: 5, 5: 8 }
 };
+
+const WIKI_DECK_CACHE_KEY = 'a9e_wiki_deck_cache_v1';
 
 // DOM Elements
 const levelSelect = document.getElementById('facility-level');
@@ -77,7 +79,13 @@ const sessionEarningsProgress = document.getElementById('session-earnings-progre
 
 // Initialize
 function init() {
-    updateSolverFromUI();
+    loadCachedWikiDecks();
+    syncDeckPresetOptions();
+    if (deckPresetSelect.value !== 'custom') {
+        applyPreset(deckPresetSelect.value, false);
+    } else {
+        updateSolverFromUI();
+    }
     resetHandState();
     setupEventListeners();
     updateUI();
@@ -100,6 +108,111 @@ function updateSolverFromUI() {
     totalCardsText.innerText = total;
 
     solver = new SwordmancySolver(deck, level);
+}
+
+function getDeckTotal(deck) {
+    return Object.values(normalizeDeck(deck)).reduce((sum, count) => sum + count, 0);
+}
+
+function syncDeckPresetOptions() {
+    const selectedValue = deckPresetSelect.value;
+    const customOption = deckPresetSelect.querySelector('option[value="custom"]');
+    deckPresetSelect.innerHTML = '';
+    if (customOption) {
+        deckPresetSelect.appendChild(customOption);
+    } else {
+        const option = document.createElement('option');
+        option.value = 'custom';
+        option.textContent = '-- Tự cấu hình --';
+        deckPresetSelect.appendChild(option);
+    }
+
+    Object.keys(DECK_PRESETS)
+        .map(Number)
+        .filter(deckId => Number.isInteger(deckId) && deckId > 0)
+        .sort((a, b) => a - b)
+        .forEach(deckId => {
+            const option = document.createElement('option');
+            option.value = String(deckId);
+            option.textContent = `Bộ bài ${deckId} (Tổng ${getDeckTotal(DECK_PRESETS[deckId])} lá)`;
+            deckPresetSelect.appendChild(option);
+        });
+
+    if ([...deckPresetSelect.options].some(option => option.value === selectedValue)) {
+        deckPresetSelect.value = selectedValue;
+    } else {
+        deckPresetSelect.value = 'custom';
+    }
+}
+
+// Applies a deck preset to the UI inputs and updates the solver
+function applyPreset(presetVal, showNotification = true) {
+    if (presetVal !== 'custom') {
+        const preset = DECK_PRESETS[presetVal];
+        if (preset) {
+            inputDeck1.value = preset[1];
+            inputDeck2.value = preset[2];
+            inputDeck3.value = preset[3];
+            inputDeck4.value = preset[4];
+            inputDeck5.value = preset[5];
+            updateSolverFromUI();
+            resetHandState();
+            updateUI();
+            if (showNotification) {
+                showToast(`Đã áp dụng mẫu Bộ bài ${presetVal}!`);
+            }
+        }
+    }
+}
+
+function normalizeDeck(deck) {
+    const normalized = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    for (let v = 1; v <= 5; v++) {
+        normalized[v] = Number(deck?.[v]) || 0;
+    }
+    return normalized;
+}
+
+function isValidDeck(deck) {
+    const normalized = normalizeDeck(deck);
+    return Object.values(normalized).reduce((sum, count) => sum + count, 0) > 0;
+}
+
+function applyDeckPresets(decks) {
+    let appliedCount = 0;
+    Object.keys(decks || {}).forEach(deckId => {
+        const numericDeckId = parseInt(deckId, 10);
+        if (!Number.isInteger(numericDeckId) || numericDeckId <= 0) return;
+
+        const deck = normalizeDeck(decks[deckId]);
+        if (isValidDeck(deck)) {
+            DECK_PRESETS[numericDeckId] = deck;
+            appliedCount++;
+        }
+    });
+    syncDeckPresetOptions();
+    return appliedCount;
+}
+
+function loadCachedWikiDecks() {
+    try {
+        const cached = JSON.parse(localStorage.getItem(WIKI_DECK_CACHE_KEY) || 'null');
+        if (!cached || !cached.decks) return false;
+        return applyDeckPresets(cached.decks) > 0;
+    } catch (error) {
+        console.warn("[Wiki] Failed to load deck cache:", error);
+        return false;
+    }
+}
+
+function saveWikiDeckCache(decks, source) {
+    const payload = {
+        version: 1,
+        source,
+        fetchedAt: new Date().toISOString(),
+        decks
+    };
+    localStorage.setItem(WIKI_DECK_CACHE_KEY, JSON.stringify(payload));
 }
 
 // Reset hand state (between trials)
@@ -172,8 +285,8 @@ function setupEventListeners() {
         showToast("Đã cập nhật cấp Đấu trường!");
     });
 
-// Applies a deck preset to the UI inputs and updates the solver
-function applyPreset(presetVal, showNotification = true) {
+// Legacy nested preset helper kept unused; event handlers use the global applyPreset.
+function applyPresetLegacy(presetVal, showNotification = true) {
     if (presetVal !== 'custom') {
         const preset = DECK_PRESETS[presetVal];
         if (preset) {
@@ -223,7 +336,7 @@ function applyPreset(presetVal, showNotification = true) {
         showToast("Đã khôi phục bộ bài mẫu 4!");
     });
 
-    btnFetchWikiDeck.addEventListener('click', fetchDecksFromWiki);
+    btnFetchWikiDeck.addEventListener('click', fetchDecksFromWikiCached);
 
     btnResetDay.addEventListener('click', () => {
         const level = parseInt(levelSelect.value);
@@ -467,29 +580,14 @@ function selectCard(val) {
 
     // Verify game conditions
     if (currentHand.length === 5) {
-        // Complete 5 cards - Ends trial
-        const reward = solver.rewards[score] || 0;
-        const totalReward = reward * (isDoubled ? 2 : 1);
-        accumulatedSessionReward += totalReward;
-        
         if (overflows > 0) {
-            tableBanner.innerText = `✓ HOÀN THÀNH! Tay bài đạt ${score} BP (Quá tải x${overflows}). Thưởng: +${totalReward.toLocaleString()} Bills.`;
-            tableBanner.style.color = 'var(--color-gold)';
+            tableBanner.innerText = `Tay bài đã đủ 5 lá, đạt ${score} BP (Quá tải x${overflows}). Hãy chọn Dừng hoặc Bỏ bài.`;
+            tableBanner.style.color = '#ff9800';
         } else {
-            tableBanner.innerText = `✓ HOÀN THÀNH! Tay bài đạt ${score} BP. Thưởng: +${totalReward.toLocaleString()} Bills.`;
-            tableBanner.style.color = 'var(--color-gold)';
+            tableBanner.innerText = `Tay bài đã đủ 5 lá, đạt ${score} BP. Hãy chọn Dừng hoặc Bỏ bài.`;
+            tableBanner.style.color = 'var(--text-secondary)';
         }
-        
-        disableControls();
-        
-        if (trialCompletionTimer) clearTimeout(trialCompletionTimer);
-        trialCompletionTimer = setTimeout(() => {
-            const attempts = parseInt(stateAttempts.value);
-            stateAttempts.value = Math.max(0, attempts - 1);
-            resetHandState();
-            updateUI();
-            trialCompletionTimer = null;
-        }, 2500);
+        updateUI();
     } else {
         if (overflows > 0) {
             tableBanner.innerText = `⚠️ QUÁ TẢI! Vừa vượt quá 10 BP (Quá tải x${overflows}). Điểm quay về ${score} BP.`;
@@ -1015,7 +1113,7 @@ function showToast(message, duration = 3000) {
 }
 
 // Fetch deck presets dynamically from the game wiki via a fallback proxy mechanism
-async function fetchDecksFromWiki() {
+async function fetchDecksFromWikiLegacy() {
     // MediaWiki parse API — returns JSON with HTML content of the page
     const apiUrl = 'https://endfield.wiki.gg/api.php?action=parse&page=Trial_of_Swordmancy&format=json&origin=*';
     
@@ -1185,6 +1283,174 @@ async function fetchDecksFromWiki() {
     } catch (error) {
         console.error("[Wiki] Parse error:", error);
         showToast("Lỗi xử lý dữ liệu từ Wiki!", 3000);
+    } finally {
+        btnFetchWikiDeck.disabled = false;
+    }
+}
+
+function parseDecksFromMarkdown(markdown) {
+    const decks = {};
+    const deckRegex = /Dataplate deck\s+(\d+)\s*\n([\s\S]*?)(?=\nDataplate deck\s+\d+\s*\n|\n##\s+|$)/gi;
+    let match;
+
+    while ((match = deckRegex.exec(markdown)) !== null) {
+        const deckId = parseInt(match[1], 10);
+        if (deckId < 1) continue;
+
+        const deck = normalizeDeck({});
+        const lines = match[2].split('\n');
+
+        for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith('|')) continue;
+            if (/^\|\s*-+/.test(trimmed) || /Battle Points/i.test(trimmed)) continue;
+
+            const cells = trimmed.split('|').slice(1, -1).map(cell => cell.trim());
+            if (cells.length < 3) continue;
+
+            const bp = parseInt(cells[1].replace(/[^0-9]/g, ''), 10);
+            const count = parseInt(cells[2].replace(/[^0-9]/g, ''), 10);
+            if (bp >= 1 && bp <= 5 && count > 0) {
+                deck[bp] += count;
+            }
+        }
+
+        if (isValidDeck(deck)) {
+            decks[deckId] = deck;
+        }
+    }
+
+    return decks;
+}
+
+function parseDecksFromHtml(html) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    const decks = {};
+
+    doc.querySelectorAll('table').forEach(table => {
+        const captionText = table.querySelector('caption')?.textContent.trim() || '';
+        const captionMatch = captionText.match(/Dataplate deck\s+(\d+)/i);
+        if (!captionMatch) return;
+
+        const deckId = parseInt(captionMatch[1], 10);
+        if (deckId < 1) return;
+
+        const headers = [...table.querySelectorAll('tr:first-child th, tr:first-child td')]
+            .map(cell => cell.textContent.toLowerCase().trim());
+        let bpColIdx = headers.findIndex(text => text.includes('battle') || text.includes('bp') || text.includes('point'));
+        let countColIdx = headers.findIndex(text => text.includes('dataplate') || text.includes('quantity') || text.includes('count') || text.includes('deck'));
+        if (bpColIdx === -1) bpColIdx = 1;
+        if (countColIdx === -1) countColIdx = 2;
+
+        const deck = normalizeDeck({});
+        table.querySelectorAll('tr').forEach(row => {
+            if (row.querySelector('th')) return;
+            const cells = row.querySelectorAll('td');
+            if (cells.length <= Math.max(bpColIdx, countColIdx)) return;
+
+            const bp = parseInt(cells[bpColIdx].textContent.replace(/[^0-9]/g, ''), 10);
+            const count = parseInt(cells[countColIdx].textContent.replace(/[^0-9]/g, ''), 10);
+            if (bp >= 1 && bp <= 5 && count > 0) {
+                deck[bp] += count;
+            }
+        });
+
+        if (isValidDeck(deck)) {
+            decks[deckId] = deck;
+        }
+    });
+
+    return decks;
+}
+
+function parseDecksFromWikiText(text) {
+    const trimmed = text.trim();
+
+    try {
+        const data = JSON.parse(trimmed);
+        const html = data?.parse?.text?.['*'] || (data?.contents ? JSON.parse(data.contents)?.parse?.text?.['*'] : null);
+        if (html) {
+            return parseDecksFromHtml(html);
+        }
+    } catch (error) {
+        // Not JSON; continue with text parsers.
+    }
+
+    const markdownDecks = parseDecksFromMarkdown(text);
+    if (Object.keys(markdownDecks).length > 0) {
+        return markdownDecks;
+    }
+
+    return parseDecksFromHtml(text);
+}
+
+async function fetchTextWithTimeout(url, timeoutMs = 15000) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        const response = await fetch(url, { signal: controller.signal });
+        const text = await response.text();
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        return text;
+    } finally {
+        clearTimeout(timeoutId);
+    }
+}
+
+// New wiki loader. Overrides the legacy implementation above.
+async function fetchDecksFromWikiCached() {
+    const apiUrl = 'https://endfield.wiki.gg/api.php?action=parse&page=Trial_of_Swordmancy&format=json&origin=*';
+    const pageUrl = 'endfield.wiki.gg/wiki/Trial_of_Swordmancy';
+    const sources = [
+        { name: 'wiki.gg API', url: apiUrl },
+        { name: 'Jina wiki mirror', url: `https://r.jina.ai/http://${pageUrl}` },
+        { name: 'AllOrigins API', url: `https://api.allorigins.win/get?url=${encodeURIComponent(apiUrl)}` }
+    ];
+
+    btnFetchWikiDeck.disabled = true;
+    showToast("Đang tải danh sách bộ bài từ Wiki...", 0);
+
+    try {
+        let lastError = null;
+
+        for (const source of sources) {
+            try {
+                console.log(`[Wiki] Trying ${source.name}...`);
+                const text = await fetchTextWithTimeout(source.url);
+                const decks = parseDecksFromWikiText(text);
+                const parsedCount = applyDeckPresets(decks);
+
+                if (parsedCount > 0) {
+                    saveWikiDeckCache(decks, source.name);
+                    if (deckPresetSelect.value !== 'custom') {
+                        applyPreset(deckPresetSelect.value, false);
+                    }
+                    showToast(`Đã tải và lưu cache ${parsedCount} bộ bài từ Wiki!`, 3000);
+                    return;
+                }
+
+                throw new Error('No valid deck tables found');
+            } catch (error) {
+                lastError = error;
+                console.warn(`[Wiki] ${source.name} failed:`, error);
+            }
+        }
+
+        if (loadCachedWikiDecks()) {
+            if (deckPresetSelect.value !== 'custom') {
+                applyPreset(deckPresetSelect.value, false);
+            }
+            showToast("Wiki đang lỗi, đã dùng dữ liệu cache local.", 3000);
+            return;
+        }
+
+        throw lastError || new Error('All wiki sources failed');
+    } catch (error) {
+        console.error("[Wiki] Fetch failed:", error);
+        showToast("Tải Wiki thất bại. Đang giữ bộ bài hiện tại.", 3000);
     } finally {
         btnFetchWikiDeck.disabled = false;
     }
