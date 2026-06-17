@@ -1,0 +1,20 @@
+// Running PerfectStrat.kt
+Card Pool is [5, 5, 5, 8, 7]
+testStrat average = 618265
+optimalStrat average = 640191
+
+// Running SimpleStrat.kt
+simpleMax(6) average = 400757
+simpleMax(7) average = 499610
+simpleMax(8) average = 605109
+simpleMax(9) average = 578029
+safeWhenNoRerolls(6) average = 400806
+safeWhenNoRerolls(7) average = 497675
+safeWhenNoRerolls(8) average = 589499
+safeWhenNoRerolls(9) average = 553555
+altMaxWhenNoRerolls(7, 6) average = 498792
+altMaxWhenNoRerolls(8, 6) average = 599286
+altMaxWhenNoRerolls(8, 7) average = 604867
+altMaxWhenNoRerolls(9, 6) average = 593680
+altMaxWhenNoRerolls(9, 7) average = 616071
+altMaxWhenNoRerolls(9, 8) average = 618086

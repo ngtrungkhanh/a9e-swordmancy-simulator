@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trial of Swordmancy Simulator & Optimizer | Arknights: Endfield</title>
+    <meta name="description" content="Trình giả lập và tính toán chiến thuật tối ưu cho chế độ選剑演武 (Trial of Swordmancy) trong game Arknights: Endfield (A9E) để tối đa hóa Wuling Stock Bills.">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+    <!-- App Header -->
+    <header>
+        <div class="logo-container">
+            <div class="logo-icon"></div>
+            <div>
+                <h1 class="logo-text">SWORDMANCY OPTIMIZER</h1>
+                <div class="subtitle">A9E - 选剑演武 Simulator & Solver</div>
+            </div>
+        </div>
+        <div class="header-info">
+            <span style="font-size: 0.75rem; color: var(--text-secondary); text-transform: uppercase;">Engine v1.2.0 (Live Assistant & DP Solver)</span>
+        </div>
+    </header>
+
+    <!-- App Layout Container -->
+    <div class="container">
+        
+        <!-- Left Sidebar: Configuration Panel -->
+        <aside>
+            <!-- Session Earnings Dashboard -->
+            <div class="panel session-earnings-panel">
+                <h2 class="panel-title">Thu Hoạch Hôm Nay</h2>
+                <div class="earnings-display">
+                    <span class="earnings-value" id="session-earnings">0</span>
+                    <span class="earnings-unit">Bills</span>
+                </div>
+                <div class="earnings-progress-container">
+                    <div class="earnings-progress-bar">
+                        <div class="earnings-progress-fill" id="session-earnings-progress" style="width: 0%;"></div>
+                    </div>
+                    <div class="earnings-progress-labels">
+                        <span class="progress-lbl-start">0</span>
+                        <span class="progress-lbl-target">Mục tiêu: 480k Bills</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Arena & Deck Settings -->
+            <div class="panel">
+                <h2 class="panel-title">Thiết lập Đấu trường & Bộ Bài</h2>
+                
+                <div class="form-group">
+                    <label for="facility-level">Cấp Đấu Trường (Arena Lvl)</label>
+                    <select id="facility-level">
+                        <option value="1">Level 1 (Max 30k, Double 0)</option>
+                        <option value="2">Level 2 (Max 60k, Double 1)</option>
+                        <option value="3">Level 3 (Max 100k, Double 2)</option>
+                        <option value="4" selected>Level 4 (Max 160k, Double 2)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="deck-preset">Mẫu Bộ Bài (Deck Preset)</label>
+                    <select id="deck-preset">
+                        <option value="custom">-- Tự cấu hình --</option>
+                        <option value="1">Bộ bài 1 (Tổng 28 lá)</option>
+                        <option value="2">Bộ bài 2 (Tổng 27 lá)</option>
+                        <option value="3">Bộ bài 3 (Tổng 26 lá)</option>
+                        <option value="4" selected>Bộ bài 4 (Tổng 29 lá)</option>
+                        <option value="5">Bộ bài 5 (Tổng 28 lá)</option>
+                        <option value="6">Bộ bài 6 (Tổng 27 lá)</option>
+                        <option value="7">Bộ bài 7 (Tổng 27 lá)</option>
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label>Chi Tiết Bộ Bài (Deck Details)</label>
+                    <table class="deck-editor">
+                        <tr>
+                            <td><span class="bp-badge bp-1">1</span></td>
+                            <td><label for="deck-c1">Thẻ 1 BP</label></td>
+                            <td><input type="number" id="deck-c1" value="3" min="0" max="20"></td>
+                        </tr>
+                        <tr>
+                            <td><span class="bp-badge bp-2">2</span></td>
+                            <td><label for="deck-c2">Thẻ 2 BP</label></td>
+                            <td><input type="number" id="deck-c2" value="7" min="0" max="20"></td>
+                        </tr>
+                        <tr>
+                            <td><span class="bp-badge bp-3">3</span></td>
+                            <td><label for="deck-c3">Thẻ 3 BP</label></td>
+                            <td><input type="number" id="deck-c3" value="7" min="0" max="20"></td>
+                        </tr>
+                        <tr>
+                            <td><span class="bp-badge bp-4">4</span></td>
+                            <td><label for="deck-c4">Thẻ 4 BP</label></td>
+                            <td><input type="number" id="deck-c4" value="7" min="0" max="20"></td>
+                        </tr>
+                        <tr>
+                            <td><span class="bp-badge bp-5">5</span></td>
+                            <td><label for="deck-c5">Thẻ 5 BP</label></td>
+                            <td><input type="number" id="deck-c5" value="5" min="0" max="20"></td>
+                        </tr>
+                    </table>
+                    <div class="deck-total">Tổng số thẻ: <span id="deck-total-cards" style="color: var(--text-primary);">29</span></div>
+                </div>
+
+                <div style="display: flex; gap: 0.5rem;">
+                    <button class="btn btn-secondary-tech" id="btn-reset-deck" style="flex: 1; padding: 0.4rem; font-size: 0.75rem;">Khôi Phục Mẫu 4</button>
+                    <button class="btn btn-secondary-tech" id="btn-fetch-wiki-deck" style="flex: 1; padding: 0.4rem; font-size: 0.75rem; border-color: var(--color-blue); color: var(--color-blue); justify-content: center;" title="Tải các bộ bài mẫu mới nhất trực tiếp từ Wiki">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 4px;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path></svg>
+                        Tải Từ Wiki
+                    </button>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Right Side: Content Area with Tabs -->
+        <main>
+            <!-- Tabs Navigation -->
+            <div class="tabs-navigation">
+                <button class="tab-btn active" data-tab="tab-live-assistant">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                    Trợ Lý Trực Tiếp (Live Assistant)
+                </button>
+                <button class="tab-btn" data-tab="tab-monte-carlo">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+                    Giả Lập Monte Carlo
+                </button>
+            </div>
+
+            <!-- TAB 1: Live Assistant -->
+            <div class="tab-content active" id="tab-live-assistant">
+                <div class="simulator-layout">
+                    
+                    <!-- Game Table -->
+                    <div class="table-area">
+                        <!-- Daily State Panel (Moved from sidebar and converted to horizontal bar) -->
+                        <div class="panel daily-state-horizontal">
+                            <div class="daily-state-title">Trạng Thái Ngày</div>
+                            <div class="daily-state-steppers">
+                                <div class="horizontal-stepper">
+                                    <span class="stepper-label">Lượt đấu:</span>
+                                    <div class="number-stepper mini-stepper">
+                                        <button class="stepper-btn" data-target="state-attempts" data-action="minus">-</button>
+                                        <input type="number" id="state-attempts" value="3" min="0" max="3" readonly>
+                                        <button class="stepper-btn" data-target="state-attempts" data-action="plus">+</button>
+                                    </div>
+                                </div>
+                                <div class="horizontal-stepper">
+                                    <span class="stepper-label">Bỏ bài free:</span>
+                                    <div class="number-stepper mini-stepper">
+                                        <button class="stepper-btn" data-target="state-free-abandons" data-action="minus">-</button>
+                                        <input type="number" id="state-free-abandons" value="3" min="0" max="3" readonly>
+                                        <button class="stepper-btn" data-target="state-free-abandons" data-action="plus">+</button>
+                                    </div>
+                                </div>
+                                <div class="horizontal-stepper">
+                                    <span class="stepper-label">Nhân đôi:</span>
+                                    <div class="number-stepper mini-stepper">
+                                        <button class="stepper-btn" data-target="state-doubles" data-action="minus">-</button>
+                                        <input type="number" id="state-doubles" value="2" min="0" max="2" readonly>
+                                        <button class="stepper-btn" data-target="state-doubles" data-action="plus">+</button>
+                                    </div>
+                                </div>
+                                <button class="btn btn-secondary-tech btn-mini-reset" id="btn-reset-day" style="padding: 0.4rem 0.75rem; font-size: 0.75rem;" title="Reset Ngày Mới (Phím R)">
+                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="margin-right: 2px;"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path></svg>
+                                    Reset (R)
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Stat Boxes -->
+                        <div class="table-stats">
+                            <div class="stat-box">
+                                <span class="stat-label">Tổng Điểm (BP)</span>
+                                <span class="stat-value active-glow" id="stat-sum">0</span>
+                            </div>
+                            <div class="stat-box">
+                                <span class="stat-label">Bài trên tay</span>
+                                <span class="stat-value" id="stat-hand-size">0 / 5</span>
+                            </div>
+                            <div class="stat-box">
+                                <span class="stat-label">Tiền thưởng hiện tại</span>
+                                <span class="stat-value gold-glow" id="stat-current-reward">0</span>
+                            </div>
+                        </div>
+
+                        <!-- Playing Arena Table -->
+                        <div class="play-table" id="play-table">
+                            <div class="table-status-banner" id="table-banner">Hãy bấm "Bốc Thủ Công" hoặc phím [Space] để bắt đầu</div>
+                            <div class="hand-container" id="hand-container">
+                                <!-- Cards will be dynamically inserted here -->
+                            </div>
+                            
+                            <!-- Hotkeys Quick Legend -->
+                            <div class="hotkeys-legend">
+                                <span class="legend-item"><span class="key-badge">1-5</span> Nhập Thẻ</span>
+                                <span class="legend-item"><span class="key-badge">Space</span> Bốc/Chấp Nhận</span>
+                                <span class="legend-item"><span class="key-badge">X</span> Bốc Ngẫu Nhiên</span>
+                                <span class="legend-item"><span class="key-badge">D</span> Nhân Đôi</span>
+                                <span class="legend-item"><span class="key-badge">S</span> Dừng</span>
+                                <span class="legend-item"><span class="key-badge">A</span> Bỏ Bài</span>
+                                <span class="legend-item"><span class="key-badge">Backspace/Z</span> Undo</span>
+                            </div>
+                        </div>
+
+                        <!-- Control Buttons -->
+                        <div class="control-bar">
+                            <button class="btn btn-primary" id="btn-draw">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>
+                                Bốc Thủ Công (Draw)
+                            </button>
+                            <button class="btn btn-secondary-tech" id="btn-draw-random" title="Rút ngẫu nhiên từ bộ bài còn lại (Phím X)">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line><polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line><line x1="4" y1="4" x2="9" y2="9"></line></svg>
+                                Bốc Ngẫu Nhiên (X)
+                            </button>
+                            <button class="btn btn-double" id="btn-double">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                                Nhân Đôi (Double)
+                            </button>
+                            <button class="btn btn-stop-action" id="btn-stop">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                                Dừng & Nhận Thưởng
+                            </button>
+                            <button class="btn btn-danger" id="btn-abandon">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></svg>
+                                Từ Bỏ Bài (Abandon)
+                            </button>
+                            <button class="btn btn-undo" id="btn-undo">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"></path></svg>
+                                Quay Lại (Undo)
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Right Column: Live Suggestions & Probability Solver -->
+                    <div class="advice-box">
+                        
+                        <!-- Suggestion Container -->
+                        <div class="suggestion-box" id="suggestion-box">
+                            <div class="suggestion-header" id="suggestion-header">Nút Bấm Kế Tiếp Nên Bấm</div>
+                            <div class="suggestion-value" id="suggestion-value">Hãy bắt đầu</div>
+                            <div class="suggestion-reason" id="suggestion-reason">Nhấn "Bốc Thủ Công" hoặc phím [Space] để bắt đầu. Trợ lý sẽ đề xuất bước đi tốt nhất dựa trên tính toán toán học kỳ vọng EV.</div>
+                        </div>
+
+                        <!-- Expected Value Details -->
+                        <div class="panel" style="padding: 1rem; border-color: rgba(255, 255, 255, 0.05); box-shadow: none;">
+                            <div class="panel-title" style="font-size: 0.8rem; margin-bottom: 0.75rem;">Phân Tích EV Dự kiến</div>
+                            <div class="ev-details">
+                                <div class="ev-row" id="ev-row-state">
+                                    <span class="ev-label">EV Trạng thái hiện tại:</span>
+                                    <span class="ev-val" id="ev-val-state">-</span>
+                                </div>
+                                <div class="ev-row" id="ev-row-draw">
+                                    <span class="ev-label">EV Rút tiếp (Draw):</span>
+                                    <span class="ev-val" id="ev-val-draw">-</span>
+                                </div>
+                                <div class="ev-row" id="ev-row-stop">
+                                    <span class="ev-label">EV Dừng lại (Stop):</span>
+                                    <span class="ev-val" id="ev-val-stop">-</span>
+                                </div>
+                                <div class="ev-row" id="ev-row-abandon">
+                                    <span class="ev-label">EV Từ bỏ (Abandon):</span>
+                                    <span class="ev-val" id="ev-val-abandon">-</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Card Probabilities & Counts -->
+                        <div class="panel" style="padding: 1rem; border-color: rgba(255, 255, 255, 0.05); box-shadow: none;">
+                            <div class="panel-title" style="font-size: 0.8rem; margin-bottom: 0.75rem;">Xác Suất Thẻ Vẽ Tiếp Theo & Bộ Bài Còn Lại</div>
+                            <div class="prob-list">
+                                <div class="prob-row">
+                                    <span class="prob-lbl bp-1">1</span>
+                                    <div class="prob-bar-container">
+                                        <div class="prob-bar-fill" id="prob-bar-1" style="width: 0%;"></div>
+                                    </div>
+                                    <span class="prob-count-lbl" id="prob-count-1">0/0 lá</span>
+                                    <span class="prob-val" id="prob-val-1">0.0%</span>
+                                </div>
+                                <div class="prob-row">
+                                    <span class="prob-lbl bp-2">2</span>
+                                    <div class="prob-bar-container">
+                                        <div class="prob-bar-fill" id="prob-bar-2" style="width: 0%;"></div>
+                                    </div>
+                                    <span class="prob-count-lbl" id="prob-count-2">0/0 lá</span>
+                                    <span class="prob-val" id="prob-val-2">0.0%</span>
+                                </div>
+                                <div class="prob-row">
+                                    <span class="prob-lbl bp-3">3</span>
+                                    <div class="prob-bar-container">
+                                        <div class="prob-bar-fill" id="prob-bar-3" style="width: 0%;"></div>
+                                    </div>
+                                    <span class="prob-count-lbl" id="prob-count-3">0/0 lá</span>
+                                    <span class="prob-val" id="prob-val-3">0.0%</span>
+                                </div>
+                                <div class="prob-row">
+                                    <span class="prob-lbl bp-4">4</span>
+                                    <div class="prob-bar-container">
+                                        <div class="prob-bar-fill" id="prob-bar-4" style="width: 0%;"></div>
+                                    </div>
+                                    <span class="prob-count-lbl" id="prob-count-4">0/0 lá</span>
+                                    <span class="prob-val" id="prob-val-4">0.0%</span>
+                                </div>
+                                <div class="prob-row">
+                                    <span class="prob-lbl bp-5">5</span>
+                                    <div class="prob-bar-container">
+                                        <div class="prob-bar-fill" id="prob-bar-5" style="width: 0%;"></div>
+                                    </div>
+                                    <span class="prob-count-lbl" id="prob-count-5">0/0 lá</span>
+                                    <span class="prob-val" id="prob-val-5">0.0%</span>
+                                </div>
+                                <div class="prob-row" style="margin-top: 0.5rem; border-top: 1px solid var(--border-color); padding-top: 0.5rem;">
+                                    <span class="prob-lbl overflow-text" style="width: auto;">💥 OVERFLOW</span>
+                                    <div class="prob-bar-container">
+                                        <div class="prob-bar-fill overflow-fill" id="prob-bar-overflow" style="width: 0%;"></div>
+                                    </div>
+                                    <span class="prob-count-lbl overflow-text">-</span>
+                                    <span class="prob-val overflow-text" id="prob-val-overflow">0.0%</span>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+
+            <!-- TAB 2: Monte Carlo Simulator -->
+            <div class="tab-content" id="tab-monte-carlo">
+                <div class="panel">
+                    <h2 class="panel-title" style="margin-bottom: 0.50rem;">Giả Lập Mô Phỏng Monte Carlo Hàng Loạt</h2>
+                    <p style="font-size: 0.8rem; color: var(--text-secondary); margin-bottom: 1.5rem;">
+                        Chạy mô phỏng hàng ngàn ngày dựa trên thuật toán tối ưu hóa (Expected Value) để so sánh hiệu quả của chiến thuật DP Solver so với các lối chơi thông thường khác.
+                    </p>
+                    
+                    <div class="monte-carlo-layout">
+                        
+                        <!-- Top Bar: MCQ Parameters & Trigger -->
+                        <div class="monte-carlo-top-bar">
+                            <div class="form-group" style="margin-bottom: 0; flex: 1; min-width: 280px;">
+                                <label for="mc-days">Số ngày giả lập (Days)</label>
+                                <input type="number" id="mc-days" value="10000" min="100" max="100000">
+                                <span style="font-size: 0.7rem; color: var(--text-muted); margin-top: 0.25rem; display: block;">Khuyên dùng 10,000 ngày để số liệu thống kê chuẩn xác và xử lý nhanh chóng.</span>
+                            </div>
+                            
+                            <button class="btn btn-primary" id="btn-run-mc" style="min-width: 200px; justify-content: center; height: 42px; padding: 0.5rem 1.5rem; margin-bottom: 4px;">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"></path></svg>
+                                Bắt đầu Giả Lập
+                            </button>
+                        </div>
+
+                        <!-- Bottom: MCQ Charts and tables -->
+                        <div class="mc-chart-panel">
+                            <div class="panel-title" style="font-size: 0.9rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem; margin-bottom: 0.5rem;">Bảng Thống Kê So Sánh Chiến Thuật <span style="font-size: 0.75rem; color: var(--text-muted); font-weight: normal; text-transform: none; margin-left: 0.5rem;">(Di chuột vào tiêu đề hoặc tên phương án để xem giải thích chi tiết)</span></div>
+                            
+                            <table class="strategy-table">
+                                <thead>
+                                    <tr>
+                                        <th class="has-tooltip" data-tooltip="Tên chiến thuật được áp dụng chạy mô phỏng.">Phương Án Chơi</th>
+                                        <th class="has-tooltip" data-tooltip="Tổng số Wuling Stock Bills kiếm được trung bình mỗi ngày từ 3 lượt đấu.">Trung Bình Ngày (Bills)</th>
+                                        <th class="has-tooltip" data-tooltip="Tỷ lệ thu nhập so với Chiến thuật Tối ưu (DP) làm mốc 100%.">Hiệu Suất</th>
+                                        <th class="has-tooltip" data-tooltip="Độ biến động thu nhập giữa các ngày (độ lệch chuẩn càng thấp càng ổn định).">Độ Lệch Chuẩn</th>
+                                        <th class="has-tooltip" data-tooltip="Số Wuling Stock Bills kiếm được ít nhất trong 1 ngày giả lập.">Thấp Nhất (Bills)</th>
+                                        <th class="has-tooltip" data-tooltip="Số Wuling Stock Bills kiếm được nhiều nhất trong 1 ngày giả lập.">Cao Nhất (Bills)</th>
+                                        <th class="has-tooltip" data-tooltip="Số lần điểm tích lũy vượt quá 10 trong một ngày (bị reset điểm về điểm dư chia 11).">Quá Tải/Ngày</th>
+                                        <th class="has-tooltip" data-tooltip="Số lượt bỏ bài (Abandon) trung bình mỗi ngày để làm lại tay mới.">Bỏ Bài/Ngày</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="mc-results-tbody">
+                                    <tr>
+                                        <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 3rem;">Bấm "Bắt đầu Giả Lập" để chạy mô phỏng 10,000 ngày...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+
+                            <!-- Chart Component -->
+                            <div class="chart-container" id="chart-container">
+                                <div class="chart-axis-label" style="left: 0; bottom: auto; top: -15px;">Doanh thu trung bình ngày (Bills)</div>
+                                <!-- Bars will be inserted here dynamically -->
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- Card Picker Modal Overlay -->
+    <div class="modal-overlay" id="card-picker-modal">
+        <div class="modal-content">
+            <h3 class="modal-title">LÁ BÀI VỪA BỐC ĐƯỢC IN-GAME</h3>
+            <p class="modal-subtitle">Hãy chọn số điểm của lá bài vừa bốc in-game (hoặc nhấn phím số tương ứng 1-5)</p>
+            <div class="picker-cards-grid">
+                <button class="picker-card-btn bp-1" data-value="1">
+                    <span class="picker-card-bp">1</span>
+                    <span class="picker-card-lbl">BP</span>
+                    <span class="picker-card-info" id="picker-info-1">Còn 3 lá (23%)</span>
+                </button>
+                <button class="picker-card-btn bp-2" data-value="2">
+                    <span class="picker-card-bp">2</span>
+                    <span class="picker-card-lbl">BP</span>
+                    <span class="picker-card-info" id="picker-info-2">Còn 7 lá (35%)</span>
+                </button>
+                <button class="picker-card-btn bp-3" data-value="3">
+                    <span class="picker-card-bp">3</span>
+                    <span class="picker-card-lbl">BP</span>
+                    <span class="picker-card-info" id="picker-info-3">Còn 7 lá (35%)</span>
+                </button>
+                <button class="picker-card-btn bp-4" data-value="4">
+                    <span class="picker-card-bp">4</span>
+                    <span class="picker-card-lbl">BP</span>
+                    <span class="picker-card-info" id="picker-info-4">Còn 7 lá (35%)</span>
+                </button>
+                <button class="picker-card-btn bp-5" data-value="5">
+                    <span class="picker-card-bp">5</span>
+                    <span class="picker-card-lbl">BP</span>
+                    <span class="picker-card-info" id="picker-info-5">Còn 5 lá (20%)</span>
+                </button>
+            </div>
+            <div style="display: flex; justify-content: center; margin-top: 1.5rem;">
+                <button class="btn btn-secondary-tech" id="btn-close-picker">Đóng (ESC)</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification element -->
+    <div class="toast" id="toast-message">Đã tính toán lại chiến thuật!</div>
+
+    <script type="module" src="solver.js"></script>
+    <script type="module" src="app.js"></script>
+</body>
+</html>
