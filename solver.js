@@ -224,16 +224,37 @@ class SwordmancySolver {
             }
         }
 
-        // Calculate overflow probability (if score + v > 10)
+        // Calculate overflow probability (if currentSum + v > 21)
         let overflowProb = 0;
+        const currentSum = hand.reduce((acc, val) => acc + val, 0);
         if (totalRemaining > 0) {
             let overflowCards = 0;
             for (let v = 1; v <= 5; v++) {
-                if (score + v > 10) {
+                if (currentSum + v > 21) {
                     overflowCards += remaining[v] || 0;
                 }
             }
             overflowProb = overflowCards / totalRemaining;
+        }
+
+        // Calculate probability of getting exactly 10 and 9-10 (score 9 or 10)
+        let prob10 = 0;
+        let prob9Plus = 0;
+        if (totalRemaining > 0) {
+            let cardsFor10 = 0;
+            let cardsFor9Plus = 0;
+            for (let v = 1; v <= 5; v++) {
+                const nextScore = (score + v) % 11;
+                const count = remaining[v] || 0;
+                if (nextScore === 10) {
+                    cardsFor10 += count;
+                }
+                if (nextScore === 9 || nextScore === 10) {
+                    cardsFor9Plus += count;
+                }
+            }
+            prob10 = cardsFor10 / totalRemaining;
+            prob9Plus = cardsFor9Plus / totalRemaining;
         }
 
         return {
@@ -246,6 +267,8 @@ class SwordmancySolver {
                 evDouble: evDouble === -Infinity ? null : evDouble,
                 drawProbs,
                 overflowProb,
+                prob10,
+                prob9Plus,
                 totalRemaining
             }
         };

@@ -12,7 +12,7 @@
     "pack": "npm run build && electron-builder --dir",
     "dist:unpacked": "npm run build && powershell -ExecutionPolicy Bypass -File scripts/build-unpacked.ps1",
     "dist": "npm run build && electron-builder",
-    "dist:win": "npm run build && electron-builder --win"
+    "dist:win": "powershell -ExecutionPolicy Bypass -File scripts/build-win.ps1"
   },
   "build": {
     "appId": "com.a9e.swordmancy.optimizer",

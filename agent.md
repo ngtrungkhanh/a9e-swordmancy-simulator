@@ -1,81 +1,102 @@
-# Trial of Swordmancy Simulator - Developer & Agent Guide
+﻿# Trial of Swordmancy Simulator - Developer & Agent Guide
 
-Dự án này là công cụ giả lập và tối ưu hóa lối chơi cho chế độ **Trial of Swordmancy** trong game Arknights: Endfield. Dự án gồm hai phần chính: **Web Simulator** (chạy trên trình duyệt) và **Electron Live Assistant** (chạy dưới dạng app desktop để quét game thực tế).
+Du an nay la cong cu gia lap va toi uu hoa loi choi cho che do **Trial of Swordmancy** trong game Arknights: Endfield. Du an gom hai phan chinh: **Web Simulator** (chay tren trinh duyet) va **Electron Live Assistant** (chay duoi dang app desktop de quet game thuc te).
 
 ---
 
-## 🛠 Công nghệ sử dụng
+## Cong nghe su dung
 - **Bundler:** Vite
-- **Frontend:** Vanilla HTML, CSS và JavaScript (ES Modules).
-- **Desktop Wrapper:** Electron (hỗ trợ preload IPC, global shortcuts).
-- **Thuật toán cốt lõi:** Quy hoạch động (Dynamic Programming - DP) phối hợp cùng mô phỏng Monte Carlo để tìm phương án tối ưu nhất.
+- **Frontend:** Vanilla HTML, CSS va JavaScript (ES Modules).
+- **Desktop Wrapper:** Electron (ho tro preload IPC, global shortcuts).
+- **Thuat toan cot loi:** Quy hoach dong (Dynamic Programming - DP) phoi hop cung mo phong Monte Carlo de tim phuong an toi uu nhat.
 
 ---
 
-## 📂 Cấu trúc thư mục chính
-- `index.html`, `app.js`, `styles.css`: Mã nguồn giao diện giả lập nền Web.
-- `solver.js`: Thuật toán tính toán Quy hoạch động (DP) và giả lập Monte Carlo dùng chung cho cả Web và Electron.
-- `electron/main.cjs`: Tiến trình chính (Main Process) của Electron. Quản lý cửa sổ ứng dụng, đăng ký phím tắt F4 toàn cục, chụp màn hình thông qua `desktopCapturer`.
-- `electron/preload.cjs`: Cầu nối IPC bảo mật giữa Main Process và Renderer Process.
-- `electron/assistant.html`, `electron/assistant.css`, `electron/assistant.js`: Giao diện và logic của cửa sổ trợ lý quét game thực tế.
-- `electron/config.js`: File cấu hình tọa độ quét màn hình game (mặc định hỗ trợ màn hình 2K).
+## Cau truc thu muc chinh
+- `index.html`, `app.js`, `styles.css`: Ma nguon giao dien gia lap nen Web.
+- `solver.js`: Thuat toan tinh toan DP va Monte Carlo dung chung cho ca Web va Electron.
+- `electron/main.cjs`: Main Process - quan ly cua so, phim tat F4/F5, chup man hinh, luu kich thuoc cua so (window-size.json).
+- `electron/preload.cjs`: Cau noi IPC bao mat.
+- `electron/assistant.html`, `electron/assistant.css`, `electron/assistant.js`: Giao dien va logic tro ly quet game.
+- `electron/config.js`: Toa do quet man hinh (mac dinh 2K).
 
 ---
 
-## 💡 Các Logic Quan Trọng
+## Logic Quan Trong
 
-### 1. Tải dữ liệu bộ bài từ Wiki (Dynamic Fetching)
-- Nguồn dữ liệu: [Trial of Swordmancy Wiki](https://endfield.wiki.gg/wiki/Trial_of_Swordmancy).
-- API sử dụng: `https://endfield.wiki.gg/api.php?action=parse&page=Trial_of_Swordmancy&format=json&origin=*`
-- **Fallback & Proxy:** Sử dụng tải trực tiếp, nếu thất bại thử qua các Proxy: `corsproxy.io` -> `allorigins.win`.
-- **Parser:** Bóc tách bảng có caption dạng `Dataplate deck [1-7]` để lưu trữ số lượng bài theo Battle Points (1 đến 5).
+### 1. Tai du lieu bo bai tu Wiki
+- API: `https://endfield.wiki.gg/api.php?action=parse&page=Trial_of_Swordmancy&format=json&origin=*`
+- Fallback qua Proxy: corsproxy.io -> allorigins.win
+- Parser: Doc bang co caption "Dataplate deck [1-7]"
 
-### 2. Thuật toán giải quyết (Solver - solver.js)
-- **Quy hoạch động (DP):** Tính toán EV (Expected Value) dựa trên các lá bài trên tay, các lá còn lại trong deck, số lượt bốc/reroll/x2 còn lại.
-- **Monte Carlo Simulation:** Chạy giả lập 10,000 ngày để chứng minh hiệu quả thuật toán.
+### 2. Solver (solver.js)
+- **DP:** Tinh EV dua tren bai tren tay, deck con lai, so luot boc/reroll/x2.
+- **Monte Carlo:** 10,000 ngay gia lap.
+- **Xac suat bo sung:**
+  - `overflowProb`: tran +1 (sum thuc te + la tiep > 21)
+  - `prob10`: xac suat ra 10 BP hoac 21 BP (sum % 11 === 10). Mau vang kim.
+  - `prob9Plus`: xac suat ra 9-10 BP hoac 20-21 BP (sum % 11 === 9 hoac 10). Mau xanh la. Khi da tran (sum > 11) chi tinh 20/21.
 
-### 3. Trợ lý chụp màn hình & Nhận diện (Electron Live Assistant)
-- **Phím tắt F4:** Đăng ký phím tắt toàn cục. Khi bấm F4, Main Process chụp ảnh toàn màn hình dưới dạng Base64 DataURL và gửi xuống Renderer.
-- **Nhận diện bài trên tay bằng Phép Trừ:** Thay vì quét các lá bài nghiêng lệch trên bàn chơi (dễ bị nhiễu), hệ thống:
-  1. Cho người dùng chọn Preset bộ bài xuất phát (hoặc dùng Preset mặc định).
-  2. Quét số lượng bài còn lại trong túi ở bảng thông số bên phải (5 dòng tương ứng 1 BP -> 5 BP).
-  3. Tính toán chính xác: `Hand = StartingDeck - ScannedRemainingDeck`.
-- **Thuật toán quét số lượng bài còn lại:**
-  - Cắt 5 vùng ảnh tại tọa độ cấu hình sẵn trong `config.js`.
-  - Nhị phân hóa ảnh với ngưỡng cứng `110` (trên 110 là pixel trắng của chữ số, dưới 110 là nền tối).
-  - Sử dụng **3x3 Grid Density** (chia nhỏ vùng chữ số thành lưới 3x3 và đếm mật độ điểm sáng) để phân loại chữ số từ `0-9` siêu nhẹ, không cần template matching hay thư viện OCR nặng nề.
-- **Nhận diện trạng thái Nhân đôi (x2):**
-  - Quét vùng chữ "BẬT/ON" tại tọa độ Double switch.
-  - Đếm số pixel có màu sáng trắng (`RGB > 220`). Nếu số lượng pixel trắng > 200 thì tính trạng thái là BẬT, ngược lại là TẮT (vô cùng chính xác và không bị nhiễu nền trong suốt).
-- **Hiển thị đề xuất:** Gợi ý tối ưu được hiển thị trực tiếp trên giao diện và giữ nguyên cho đến lần quét tiếp theo. Không phát âm thanh thông báo làm phiền người chơi.
+### 3. Tro ly chup man hinh (Electron Live Assistant)
+- `win.setContentProtection(true)`: An cua so tro ly khoi desktopCapturer.
+- **F4 (Toggle Auto-Scan):** Quet tu dong theo interval. Nut camera nhap nhay xanh la (.active-auto-scan).
+- **F5 (Force Scan Now):** Quet ngay 1 lan. Nut camera nhap nhay xanh cyan (.scanning-flash) tu luc bat dau den khi du lieu moi render xong vao overlay.
+- **OCR:** Hand = StartingDeck - ScannedRemainingDeck. Dung 3x3 Grid Density, nhi phan hoa nguong 110.
+- **Phan biet che do:** Kiem tra bracket va double switch capsule de phan biet Free Trial / Rewarded.
+
+### 4. Hai che do cua so
+- **Normal Mode:** 1280x820 (luu/khoi phuc kich thuoc qua window-size.json trong userData). Focusable, AlwaysOnTop tat.
+- **Overlay HUD Mode:** 640x220, AlwaysOnTop = screen-saver, KHONG focusable (khong cuop input game), 3 cot.
+
+### 5. Che do Khao nghiem Mien phi (Free Trial)
+- Tu dong phat hien qua OCR hoac khi attemptsLeft === 0.
+- Khi vao Free Trial va chua rut the: reset ve 1 luot nhan thuong, 0 lan bo, 0 lan x2.
+- Nguoi choi chinh duoc qua steppers tren HUD/sidebar.
+- Hien thi day du bang EV. Chi an phan Accumulated Bills.
 
 ---
 
-## 🚀 Hướng dẫn Chạy & Phát triển
+## Huong dan Chay
 
-### Cài đặt thư viện:
+### Cai dat:
 ```bash
 npm install
 ```
 
-### Chạy phiên bản Web:
+### Web:
 ```bash
 npm run dev
 ```
 
-### Chạy phiên bản Desktop (Electron Dev):
-```bash
-npm run electron:dev
+### Electron (can quyen Admin de nhan F4/F5):
+```powershell
+npx electron .
 ```
 
-### Đóng gói ứng dụng (.exe) cho Windows:
+### Dong goi .exe:
 ```bash
 npm run dist:win
 ```
-File `.exe` dạng portable và bộ cài đặt sẽ được tạo ra tại thư mục `release/`.
 
 ---
 
-## 📍 Cấu hình tọa độ màn hình
-Tất cả các thông số tọa độ nằm tại [electron/config.js](file:///d:/A9E%20sword/electron/config.js). Khi đổi độ phân giải màn hình (Ví dụ từ 2K sang Full HD hay 4K), lập trình viên chỉ cần thêm profile cấu hình cho độ phân giải đó vào mục `resolutions` của file này.
+## Cau hinh toa do man hinh
+File: `electron/config.js` - them profile resolution moi vao muc `resolutions`.
 
+## Debug
+- Screenshot debug: `d:\A9E App\debug_capture.png` (ghi de moi lan quet).
+- DevTools: Tu dong mo khi chay npx electron . (isDev mode).
+
+---
+
+## Current OCR Handoff Status (2026-06-19)
+
+- Card order bug root cause: compact hand OCR lost slot positions; `deducedHand` is sorted by BP and cannot represent draw order.
+- Current fix keeps 5 fixed slots from OCR, for example `[2, 5, 1, null, null]`, then compacts only at render/solver boundary.
+- `lastScannedSlots` is the raw scan state used when rerunning solver after preset/stepper/free-trial changes.
+- `reconcileHandSlots(scannedSlots, deducedHand)` keeps valid OCR slot positions first, then fills missing slots from `deducedHand`.
+- Current debug switch in `electron/assistant.js`: `DEBUG_SLOT_OCR_ONLY = true`.
+- While that switch is true, display uses pure slot OCR to expose real OCR failures.
+- Current card OCR still uses 3x3 grid-density plus temporary card-specific exceptions. This is fragile.
+- Recommended next OCR direction: replace card-slot digit classification with template matching for digits `1..5`.
+- Full handoff plan: `OCR_TEMPLATE_MATCHING_PLAN.md`.

@@ -9,8 +9,8 @@
 </head>
 <body>
 
-    <!-- App Header -->
-    <header>
+    <!-- App Header (Custom Title Bar) -->
+    <header class="window-header drag-region">
         <div class="logo-container">
             <div class="logo-icon"></div>
             <div>
@@ -18,13 +18,30 @@
                 <div class="subtitle">A9E - 选剑演武 Trợ Lý Quét Màn Hình</div>
             </div>
         </div>
-        <div class="header-info">
-            <span class="status-badge" id="app-status">SẴN SÀNG QUÉT (F4)</span>
+        <div class="header-center" style="display: flex; align-items: center; justify-content: center; gap: 0.75rem;">
+            <!-- Free trial status badge when active -->
+            <span class="status-badge mode-badge" id="mode-badge" style="display: none; background: rgba(245, 158, 11, 0.15); color: #f59e0b; border-color: rgba(245, 158, 11, 0.3); margin-left: 0; font-weight: bold; font-size: 0.75rem;">KHẢO NGHIỆM MIỄN PHÍ</span>
+            <span class="status-badge" id="app-status" style="margin-left: 0;">SẴN SÀNG QUÉT (F4)</span>
+        </div>
+        <div class="header-info" style="display: flex; align-items: center;">
+            <!-- Window controls -->
+            <div class="window-controls" style="margin-left: 0; display: flex; gap: 0.25rem;">
+                <!-- Force Scan Button (Camera Icon) in Titlebar -->
+                <button class="win-control-btn" id="win-btn-scan" title="Ép quét ngay (F5)" style="color: var(--color-gold); background: rgba(245, 158, 11, 0.1);">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                </button>
+                <button class="win-control-btn" id="win-btn-minimize" title="Thu nhỏ">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                </button>
+                <button class="win-control-btn win-close-btn" id="win-btn-close" title="Đóng">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
         </div>
     </header>
 
-    <!-- App Layout Container -->
-    <div class="container assistant-layout">
+    <!-- App Layout Container (Regular Main Interface) -->
+    <div class="container assistant-layout" id="main-layout">
         
         <!-- Left Sidebar: Controls & Settings -->
         <aside class="sidebar-assistant">
@@ -34,12 +51,20 @@
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right: 8px;"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
                     QUÉT GAME (SCAN)
                 </button>
-                <div class="scan-options">
-                    <label class="checkbox-container">
+                
+                <button class="btn btn-secondary-tech btn-overlay-toggle" id="btn-toggle-overlay" style="width: 100%; margin-top: 0.75rem; justify-content: center; font-size: 0.85rem; padding: 0.65rem 0;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right: 6px;"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="9" y1="3" x2="9" y2="21"></line></svg>
+                    BẬT CHẾ ĐỘ OVERLAY (HUD)
+                </button>
+
+                <div class="scan-options" style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin: 0.75rem 0;">
+                    <label class="checkbox-container" style="margin-bottom: 0;">
                         <input type="checkbox" id="chk-auto-scan">
                         <span class="checkmark"></span>
-                        Tự động quét (mỗi 1s)
+                        Tự động quét mỗi:
                     </label>
+                    <input type="number" id="num-scan-interval" value="2" min="1" max="10" style="width: 45px; text-align: center; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.15); color: #fff; border-radius: 4px; font-size: 0.8rem; padding: 2px 4px; -webkit-app-region: no-drag;">
+                    <span style="font-size: 0.8rem; color: var(--text-secondary);">giây</span>
                 </div>
                 <div class="scan-meta" id="scan-meta">
                     Chưa quét lần nào. Nhấn F4 hoặc nút SCAN.
@@ -60,17 +85,57 @@
                 <div class="form-group">
                     <label for="deck-preset">Bộ Bài Xuất Phát</label>
                     <select id="deck-preset">
-                        <option value="1">Bộ bài 1 (Tổng 28 lá)</option>
-                        <option value="2">Bộ bài 2 (Tổng 27 lá)</option>
-                        <option value="3">Bộ bài 3 (Tổng 26 lá)</option>
+                        <option value="1">Bộ bài 1 (Tổng 29 lá)</option>
+                        <option value="2">Bộ bài 2 (Tổng 28 lá)</option>
+                        <option value="3">Bộ bài 3 (Tổng 27 lá)</option>
                         <option value="4" selected>Bộ bài 4 (Tổng 29 lá)</option>
                         <option value="5">Bộ bài 5 (Tổng 28 lá)</option>
-                        <option value="6">Bộ bài 6 (Tổng 27 lá)</option>
-                        <option value="7">Bộ bài 7 (Tổng 27 lá)</option>
+                        <option value="6">Bộ bài 6 (Tổng 28 lá)</option>
+                        <option value="7">Bộ bài 7 (Tổng 28 lá)</option>
+                        <option value="custom">-- Tự cấu hình --</option>
                     </select>
                 </div>
 
-                <div class="daily-steppers-assistant">
+                <div class="form-group" id="custom-deck-config" style="display: none; border: 1px dashed rgba(255, 255, 255, 0.1); padding: 0.5rem; border-radius: 4px;">
+                    <label style="font-size: 0.75rem; margin-bottom: 0.25rem; display: block;">Số lượng thẻ xuất phát</label>
+                    <div style="display: flex; gap: 0.25rem;">
+                        <div style="flex: 1; text-align: center;">
+                            <span style="font-size: 0.7rem; color: var(--text-muted); display: block;">1 BP</span>
+                            <input type="number" id="custom-deck-1" value="3" min="0" max="15" style="width: 100%; text-align: center; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); color: #fff; border-radius: 4px; font-size: 0.8rem; padding: 2px;">
+                        </div>
+                        <div style="flex: 1; text-align: center;">
+                            <span style="font-size: 0.7rem; color: var(--text-muted); display: block;">2 BP</span>
+                            <input type="number" id="custom-deck-2" value="7" min="0" max="15" style="width: 100%; text-align: center; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); color: #fff; border-radius: 4px; font-size: 0.8rem; padding: 2px;">
+                        </div>
+                        <div style="flex: 1; text-align: center;">
+                            <span style="font-size: 0.7rem; color: var(--text-muted); display: block;">3 BP</span>
+                            <input type="number" id="custom-deck-3" value="7" min="0" max="15" style="width: 100%; text-align: center; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); color: #fff; border-radius: 4px; font-size: 0.8rem; padding: 2px;">
+                        </div>
+                        <div style="flex: 1; text-align: center;">
+                            <span style="font-size: 0.7rem; color: var(--text-muted); display: block;">4 BP</span>
+                            <input type="number" id="custom-deck-4" value="7" min="0" max="15" style="width: 100%; text-align: center; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); color: #fff; border-radius: 4px; font-size: 0.8rem; padding: 2px;">
+                        </div>
+                        <div style="flex: 1; text-align: center;">
+                            <span style="font-size: 0.7rem; color: var(--text-muted); display: block;">5 BP</span>
+                            <input type="number" id="custom-deck-5" value="5" min="0" max="15" style="width: 100%; text-align: center; background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.1); color: #fff; border-radius: 4px; font-size: 0.8rem; padding: 2px;">
+                        </div>
+                    </div>
+                    <button class="btn btn-secondary-tech" id="btn-set-starting" style="width: 100%; margin-top: 0.5rem; justify-content: center; font-size: 0.75rem; padding: 4px;">
+                        Lấy bộ bài từ ảnh quét
+                    </button>
+                </div>
+
+                <!-- Free Trial Checkbox -->
+                <div class="form-group checkbox-group" style="margin-top: 1rem; margin-bottom: 0.5rem;">
+                    <label class="checkbox-container">
+                        <input type="checkbox" id="chk-free-trial">
+                        <span class="checkmark"></span>
+                        <strong style="color: var(--color-orange);">Khảo nghiệm Miễn phí</strong>
+                    </label>
+                </div>
+
+                <!-- Daily Counters Steppers Panel -->
+                <div class="steppers-container" id="sidebar-steppers">
                     <div class="stepper-row">
                         <span class="stepper-lbl">Lượt đấu thưởng còn:</span>
                         <div class="number-stepper mini-stepper">
@@ -101,15 +166,7 @@
                     Reset Ngày Mới
                 </button>
             </div>
-            
-            <div class="panel instructions-panel">
-                <h2 class="panel-title" style="font-size: 0.75rem;">Hướng dẫn nhanh</h2>
-                <ul class="instructions-list">
-                    <li>Chạy game ở chế độ **Không viền** (Borderless).</li>
-                    <li>Bật game lên tab rút bài Swordmancy.</li>
-                    <li>Ấn **F4** khi đang trong game hoặc nút **SCAN** trên app để quét màn hình tự động.</li>
-                </ul>
-            </div>
+
         </aside>
 
         <!-- Main Panel: Scanned results & advice -->
@@ -122,18 +179,22 @@
             </div>
 
             <!-- Middle Row: Scanned Stats & Display Hand -->
-            <div class="row-stats">
+            <div class="row-stats" style="grid-template-columns: repeat(4, 1fr);">
                 <div class="stat-card">
                     <span class="stat-lbl">Điểm Số (BP)</span>
                     <span class="stat-num" id="stat-sum">0</span>
                 </div>
-                <div class="stat-card">
+                <div class="stat-card" id="card-stat-double">
                     <span class="stat-lbl">Nhân Đôi (x2)</span>
                     <span class="stat-num text-muted" id="stat-double">TẮT</span>
                 </div>
-                <div class="stat-card">
-                    <span class="stat-lbl">Wuling Bills dự kiến</span>
+                <div class="stat-card" id="card-stat-reward">
+                    <span class="stat-lbl">Giá trị kỳ vọng (EV)</span>
                     <span class="stat-num gold-glow" id="stat-reward">0</span>
+                </div>
+                <div class="stat-card" id="card-stat-accumulated">
+                    <span class="stat-lbl">Tiền đã kiếm</span>
+                    <span class="stat-num green-glow" id="stat-accumulated">0</span>
                 </div>
             </div>
 
@@ -181,8 +242,117 @@
         </main>
     </div>
 
+    <!-- Minimalist Overlay HUD (visible only in mode-overlay) -->
+    <div id="overlay-hud" class="overlay-hud-container" style="display: none;">
+        <!-- Drag Handle -->
+        <div class="hud-drag-handle drag-region" title="Nhấn giữ để di chuyển HUD">
+            <div class="hud-drag-title">SWORDMANCY HUD</div>
+            <div class="hud-drag-dots">•••</div>
+        </div>
+        
+        <div class="hud-main-content">
+            <!-- Column 1: Core Action, Hand, Rewards, and Steppers -->
+            <div class="hud-col hud-col-left">
+                <div class="hud-hand" id="hud-hand-display">[ - ]</div>
+                <div class="hud-action-box">
+                    <span class="hud-action-lbl">ĐỀ XUẤT:</span>
+                    <span class="hud-action-val" id="hud-action-val">QUÉT BÀI (F4)</span>
+                </div>
+                <div class="hud-stats-row">
+                    <div class="hud-stat-item">
+                        <span class="hud-stat-lbl">EV:</span>
+                        <span class="hud-stat-val gold-glow" id="hud-reward-val">0 Bills</span>
+                    </div>
+                    <div class="hud-stat-item" id="hud-stat-accumulated-box">
+                        <span class="hud-stat-lbl">ĐÃ KIẾM:</span>
+                        <span class="hud-stat-val green-glow" id="hud-accumulated-val">0 Bills</span>
+                    </div>
+                </div>
+                <!-- HUD steppers (hidden when in free trial mode) -->
+                <div class="hud-steppers" id="hud-steppers-container">
+                    <div class="hud-stepper-row">
+                        <span class="hud-step-lbl">Lượt:</span>
+                        <div class="hud-step-controls">
+                            <button class="hud-step-btn" id="hud-btn-attempts-minus">-</button>
+                            <span class="hud-step-val" id="hud-attempts-val">3</span>
+                            <button class="hud-step-btn" id="hud-btn-attempts-plus">+</button>
+                        </div>
+                    </div>
+                    <div class="hud-stepper-row">
+                        <span class="hud-step-lbl">Bỏ:</span>
+                        <div class="hud-step-controls">
+                            <button class="hud-step-btn" id="hud-btn-abandons-minus">-</button>
+                            <span class="hud-step-val" id="hud-abandons-val">3</span>
+                            <button class="hud-step-btn" id="hud-btn-abandons-plus">+</button>
+                        </div>
+                    </div>
+                    <div class="hud-stepper-row">
+                        <span class="hud-step-lbl">x2:</span>
+                        <div class="hud-step-controls">
+                            <button class="hud-step-btn" id="hud-btn-doubles-minus">-</button>
+                            <span class="hud-step-val" id="hud-doubles-val">2</span>
+                            <button class="hud-step-btn" id="hud-btn-doubles-plus">+</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="hud-divider"></div>
+            
+            <!-- Column 2: 4 EV Values -->
+            <div class="hud-col hud-col-middle" id="hud-col-ev-details">
+                <div class="hud-title">CHI TIẾT EV</div>
+                <div class="hud-ev-details">
+                    <div class="hud-ev-row" id="hud-ev-row-state">
+                        <span class="hud-ev-lbl">EV Trạng thái:</span>
+                        <span class="hud-ev-val" id="hud-ev-val-state">-</span>
+                    </div>
+                    <div class="hud-ev-row" id="hud-ev-row-draw">
+                        <span class="hud-ev-lbl">EV Rút tiếp (Draw):</span>
+                        <span class="hud-ev-val" id="hud-ev-val-draw">-</span>
+                    </div>
+                    <div class="hud-ev-row" id="hud-ev-row-stop">
+                        <span class="hud-ev-lbl">EV Dừng lại (Stop):</span>
+                        <span class="hud-ev-val" id="hud-ev-val-stop">-</span>
+                    </div>
+                    <div class="hud-ev-row" id="hud-ev-row-abandon">
+                        <span class="hud-ev-lbl">EV Bỏ bài (Abandon):</span>
+                        <span class="hud-ev-val" id="hud-ev-val-abandon">-</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="hud-divider" id="hud-divider-2"></div>
+            
+            <!-- Column 3: Remaining deck & probabilities -->
+            <div class="hud-col hud-col-right" id="hud-col-prob-list">
+                <div class="hud-title">BÀI CÒN LẠI & XÁC SUẤT</div>
+                <div class="hud-prob-list" id="hud-prob-list">
+                    <!-- Dynamic remaining deck list -->
+                </div>
+            </div>
+        </div>
+        
+        <!-- HUD Window Controls -->
+        <div class="hud-window-controls" style="top: 4px; right: 6px; gap: 4px;">
+            <!-- Force Scan Button (Camera Icon) -->
+            <button class="hud-win-btn" id="hud-btn-scan" title="Ép quét ngay (F5)" style="color: var(--color-gold); background: rgba(245, 158, 11, 0.1);">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+            </button>
+            <button class="hud-win-btn" id="hud-btn-normal" title="Mở rộng cửa sổ lớn">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg>
+            </button>
+            <button class="hud-win-btn hud-close-btn" id="hud-btn-close" title="Đóng trợ lý">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+        </div>
+    </div>
+
     <!-- Hidden Canvas for Image Processing -->
     <canvas id="proc-canvas" style="display: none;"></canvas>
+
+    <!-- Hidden Resize Handle for drag resizing -->
+    <div class="win-resize-handle" id="win-resize-handle" title="Kéo để thay đổi kích thước"></div>
 
     <!-- Load scripts -->
     <script src="../solver.js"></script>
