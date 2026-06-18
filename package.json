@@ -23,7 +23,9 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
-      "package.json"
+      "package.json",
+      "styles.css",
+      "solver.js"
     ],
     "win": {
       "target": [

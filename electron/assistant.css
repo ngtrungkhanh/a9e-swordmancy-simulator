@@ -1,0 +1,327 @@
+/* assistant.css */
+
+.assistant-layout {
+    display: grid;
+    grid-template-columns: 340px 1fr;
+    gap: 1.5rem;
+    padding: 1.5rem 2rem;
+    max-width: 100%;
+    margin: 0 auto;
+}
+
+.sidebar-assistant {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.main-assistant {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+/* Big Scan Button */
+.btn-scan {
+    width: 100%;
+    background: linear-gradient(135deg, #00d9ff 0%, #0088cc 100%);
+    color: #000;
+    font-family: var(--font-tech);
+    font-weight: 900;
+    font-size: 1.1rem;
+    padding: 1.1rem;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s ease;
+    box-shadow: 0 0 15px rgba(0, 217, 255, 0.4);
+    letter-spacing: 1px;
+}
+
+.btn-scan:hover {
+    box-shadow: 0 0 25px rgba(0, 217, 255, 0.8);
+    transform: translateY(-2px);
+}
+
+.btn-scan:active {
+    transform: translateY(1px);
+}
+
+.scan-panel {
+    border-left: 3px solid var(--color-blue);
+}
+
+.scan-options {
+    margin: 0.75rem 0;
+}
+
+/* Custom Checkbox */
+.checkbox-container {
+    display: flex;
+    align-items: center;
+    position: relative;
+    padding-left: 28px;
+    margin-bottom: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    user-select: none;
+}
+
+.checkbox-container input {
+    position: absolute;
+    opacity: 0;
+    cursor: pointer;
+    height: 0;
+    width: 0;
+}
+
+.checkmark {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 18px;
+    width: 18px;
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.checkbox-container:hover input ~ .checkmark {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-color: var(--color-blue);
+}
+
+.checkbox-container input:checked ~ .checkmark {
+    background-color: var(--color-blue);
+    border-color: var(--color-blue);
+}
+
+.checkmark:after {
+    content: "";
+    position: absolute;
+    display: none;
+}
+
+.checkbox-container input:checked ~ .checkmark:after {
+    display: block;
+}
+
+.checkbox-container .checkmark:after {
+    left: 6px;
+    top: 2px;
+    width: 5px;
+    height: 10px;
+    border: solid #000;
+    border-width: 0 2.5px 2.5px 0;
+    transform: rotate(45deg);
+}
+
+.scan-meta {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    padding-top: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+/* Stepper row on sidebar assistant */
+.daily-steppers-assistant {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    margin-top: 1rem;
+}
+
+.stepper-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.stepper-lbl {
+    flex: 1;
+}
+
+.instructions-list {
+    margin-left: 1rem;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    line-height: 1.4rem;
+}
+
+.instructions-list li {
+    margin-bottom: 0.25rem;
+}
+
+/* Recommendation Box */
+.assistant-suggestion {
+    padding: 1.5rem !important;
+}
+
+.suggestion-box.draw-action {
+    background: rgba(16, 185, 129, 0.05) !important;
+    border-color: rgba(16, 185, 129, 0.3) !important;
+    box-shadow: 0 0 20px rgba(16, 185, 129, 0.15) !important;
+}
+.suggestion-box.draw-action .suggestion-value {
+    color: #10b981 !important;
+    text-shadow: 0 0 10px rgba(16, 185, 129, 0.3);
+}
+
+.suggestion-box.stop-action {
+    background: rgba(239, 68, 68, 0.05) !important;
+    border-color: rgba(239, 68, 68, 0.3) !important;
+    box-shadow: 0 0 20px rgba(239, 68, 68, 0.15) !important;
+}
+.suggestion-box.stop-action .suggestion-value {
+    color: #ef4444 !important;
+    text-shadow: 0 0 10px rgba(239, 68, 68, 0.3);
+}
+
+.suggestion-box.double-action {
+    background: rgba(245, 158, 11, 0.05) !important;
+    border-color: rgba(245, 158, 11, 0.3) !important;
+    box-shadow: 0 0 20px rgba(245, 158, 11, 0.15) !important;
+}
+.suggestion-box.double-action .suggestion-value {
+    color: #f59e0b !important;
+    text-shadow: 0 0 10px rgba(245, 158, 11, 0.3);
+}
+
+.suggestion-box.abandon-action {
+    background: rgba(107, 114, 128, 0.05) !important;
+    border-color: rgba(107, 114, 128, 0.3) !important;
+    box-shadow: 0 0 20px rgba(107, 114, 128, 0.15) !important;
+}
+.suggestion-box.abandon-action .suggestion-value {
+    color: #9ca3af !important;
+    text-shadow: 0 0 10px rgba(107, 114, 128, 0.3);
+}
+
+/* Stats Cards */
+.row-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1rem;
+}
+
+.stat-card {
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.stat-lbl {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.stat-num {
+    font-family: var(--font-tech);
+    font-size: 1.5rem;
+    font-weight: 700;
+}
+
+/* Grid for Details */
+.assistant-details-grid {
+    display: grid;
+    grid-template-columns: 1fr 1.2fr;
+    gap: 1rem;
+}
+
+/* Card table */
+.card-table-panel {
+    padding: 1.5rem;
+}
+
+.hand-container {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    min-height: 100px;
+    align-items: center;
+    padding: 0.5rem 0;
+}
+
+/* Opaque static simulated cards */
+.sim-card {
+    width: 90px;
+    height: 140px;
+    background: #1c1f26;
+    border: 1px solid #2e3542;
+    border-radius: 6px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+    transition: all 0.3s ease;
+}
+
+.sim-card.empty {
+    border-style: dashed;
+    background: transparent;
+    opacity: 0.2;
+}
+
+.sim-card-num {
+    font-family: var(--font-tech);
+    font-size: 2.2rem;
+    font-weight: 900;
+    color: var(--text-primary);
+}
+
+.sim-card-lbl {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+}
+
+.sim-card.card-1 { border-color: rgba(0, 217, 255, 0.4); box-shadow: 0 0 10px rgba(0, 217, 255, 0.1); }
+.sim-card.card-2 { border-color: rgba(16, 185, 129, 0.4); box-shadow: 0 0 10px rgba(16, 185, 129, 0.1); }
+.sim-card.card-3 { border-color: rgba(245, 158, 11, 0.4); box-shadow: 0 0 10px rgba(245, 158, 11, 0.1); }
+.sim-card.card-4 { border-color: rgba(139, 92, 246, 0.4); box-shadow: 0 0 10px rgba(139, 92, 246, 0.1); }
+.sim-card.card-5 { border-color: rgba(239, 68, 68, 0.4); box-shadow: 0 0 10px rgba(239, 68, 68, 0.1); }
+
+.sim-card.card-1 .sim-card-num { color: #00d9ff; }
+.sim-card.card-2 .sim-card-num { color: #10b981; }
+.sim-card.card-3 .sim-card-num { color: #f59e0b; }
+.sim-card.card-4 .sim-card-num { color: #8b5cf6; }
+.sim-card.card-5 .sim-card-num { color: #ef4444; }
+
+/* Status Badges */
+.status-badge {
+    background: rgba(0, 217, 255, 0.1);
+    color: var(--color-blue);
+    border: 1px solid rgba(0, 217, 255, 0.2);
+    padding: 0.4rem 0.8rem;
+    border-radius: 4px;
+    font-family: var(--font-tech);
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+}
+.status-badge.scanning {
+    background: rgba(245, 158, 11, 0.1);
+    color: #f59e0b;
+    border-color: rgba(245, 158, 11, 0.2);
+}
+.status-badge.success {
+    background: rgba(16, 185, 129, 0.1);
+    color: #10b981;
+    border-color: rgba(16, 185, 129, 0.2);
+}

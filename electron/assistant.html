@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>A9E Swordmancy Assistant | Trợ Lý Quét Game</title>
+    <link rel="stylesheet" href="../styles.css">
+    <link rel="stylesheet" href="./assistant.css">
+</head>
+<body>
+
+    <!-- App Header -->
+    <header>
+        <div class="logo-container">
+            <div class="logo-icon"></div>
+            <div>
+                <h1 class="logo-text">SWORDMANCY ASSISTANT</h1>
+                <div class="subtitle">A9E - 选剑演武 Trợ Lý Quét Màn Hình</div>
+            </div>
+        </div>
+        <div class="header-info">
+            <span class="status-badge" id="app-status">SẴN SÀNG QUÉT (F4)</span>
+        </div>
+    </header>
+
+    <!-- App Layout Container -->
+    <div class="container assistant-layout">
+        
+        <!-- Left Sidebar: Controls & Settings -->
+        <aside class="sidebar-assistant">
+            <!-- Main Scan Button Group -->
+            <div class="panel scan-panel">
+                <button class="btn btn-scan" id="btn-scan">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right: 8px;"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+                    QUÉT GAME (SCAN)
+                </button>
+                <div class="scan-options">
+                    <label class="checkbox-container">
+                        <input type="checkbox" id="chk-auto-scan">
+                        <span class="checkmark"></span>
+                        Tự động quét (mỗi 1s)
+                    </label>
+                </div>
+                <div class="scan-meta" id="scan-meta">
+                    Chưa quét lần nào. Nhấn F4 hoặc nút SCAN.
+                </div>
+            </div>
+
+            <!-- Configuration / Steppers -->
+            <div class="panel">
+                <h2 class="panel-title">Thiết Lập Trạng Thái Ngày</h2>
+                
+                <div class="form-group">
+                    <label for="resolution-select">Độ Phân Giải Game</label>
+                    <select id="resolution-select">
+                        <option value="2K" selected>2K (2560 x 1440)</option>
+                    </select>
+                </div>
+
+                <div class="form-group">
+                    <label for="deck-preset">Bộ Bài Xuất Phát</label>
+                    <select id="deck-preset">
+                        <option value="1">Bộ bài 1 (Tổng 28 lá)</option>
+                        <option value="2">Bộ bài 2 (Tổng 27 lá)</option>
+                        <option value="3">Bộ bài 3 (Tổng 26 lá)</option>
+                        <option value="4" selected>Bộ bài 4 (Tổng 29 lá)</option>
+                        <option value="5">Bộ bài 5 (Tổng 28 lá)</option>
+                        <option value="6">Bộ bài 6 (Tổng 27 lá)</option>
+                        <option value="7">Bộ bài 7 (Tổng 27 lá)</option>
+                    </select>
+                </div>
+
+                <div class="daily-steppers-assistant">
+                    <div class="stepper-row">
+                        <span class="stepper-lbl">Lượt đấu thưởng còn:</span>
+                        <div class="number-stepper mini-stepper">
+                            <button class="stepper-btn" id="btn-attempts-minus">-</button>
+                            <input type="number" id="state-attempts" value="3" min="0" max="3" readonly>
+                            <button class="stepper-btn" id="btn-attempts-plus">+</button>
+                        </div>
+                    </div>
+                    <div class="stepper-row">
+                        <span class="stepper-lbl">Bỏ bài miễn phí còn:</span>
+                        <div class="number-stepper mini-stepper">
+                            <button class="stepper-btn" id="btn-abandons-minus">-</button>
+                            <input type="number" id="state-free-abandons" value="3" min="0" max="3" readonly>
+                            <button class="stepper-btn" id="btn-abandons-plus">+</button>
+                        </div>
+                    </div>
+                    <div class="stepper-row">
+                        <span class="stepper-lbl">Lượt nhân đôi còn:</span>
+                        <div class="number-stepper mini-stepper">
+                            <button class="stepper-btn" id="btn-doubles-minus">-</button>
+                            <input type="number" id="state-doubles" value="2" min="0" max="2" readonly>
+                            <button class="stepper-btn" id="btn-doubles-plus">+</button>
+                        </div>
+                    </div>
+                </div>
+
+                <button class="btn btn-secondary-tech" id="btn-reset-day" style="width: 100%; margin-top: 1rem; justify-content: center; font-size: 0.8rem;">
+                    Reset Ngày Mới
+                </button>
+            </div>
+            
+            <div class="panel instructions-panel">
+                <h2 class="panel-title" style="font-size: 0.75rem;">Hướng dẫn nhanh</h2>
+                <ul class="instructions-list">
+                    <li>Chạy game ở chế độ **Không viền** (Borderless).</li>
+                    <li>Bật game lên tab rút bài Swordmancy.</li>
+                    <li>Ấn **F4** khi đang trong game hoặc nút **SCAN** trên app để quét màn hình tự động.</li>
+                </ul>
+            </div>
+        </aside>
+
+        <!-- Main Panel: Scanned results & advice -->
+        <main class="main-assistant">
+            <!-- Top Column: Live Recommendation (Highlight) -->
+            <div class="suggestion-box assistant-suggestion" id="suggestion-box">
+                <div class="suggestion-header">NƯỚC ĐI ĐỀ XUẤT TỐI ƯU</div>
+                <div class="suggestion-value" id="suggestion-value">HÃY QUÉT GAME</div>
+                <div class="suggestion-reason" id="suggestion-reason">Nhấn phím F4 hoặc nút SCAN bên trái để chụp màn hình và tự động nhận diện bàn bài trong game.</div>
+            </div>
+
+            <!-- Middle Row: Scanned Stats & Display Hand -->
+            <div class="row-stats">
+                <div class="stat-card">
+                    <span class="stat-lbl">Điểm Số (BP)</span>
+                    <span class="stat-num" id="stat-sum">0</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-lbl">Nhân Đôi (x2)</span>
+                    <span class="stat-num text-muted" id="stat-double">TẮT</span>
+                </div>
+                <div class="stat-card">
+                    <span class="stat-lbl">Wuling Bills dự kiến</span>
+                    <span class="stat-num gold-glow" id="stat-reward">0</span>
+                </div>
+            </div>
+
+            <!-- Simulated Cards on Hand (Opaque CSS Card Deck) -->
+            <div class="panel card-table-panel">
+                <div class="panel-title" style="font-size: 0.8rem; margin-bottom: 0.75rem;">Các Lá Bài Đang Có Trên Tay (Nhận diện tự động)</div>
+                <div class="hand-container" id="hand-container">
+                    <!-- Dynamic cards will show here -->
+                </div>
+            </div>
+
+            <!-- Expected Value & Probabilities Group -->
+            <div class="assistant-details-grid">
+                <!-- EV Analysis Panel -->
+                <div class="panel">
+                    <h2 class="panel-title" style="font-size: 0.8rem; margin-bottom: 0.75rem;">Phân Tích Giá Trị Kỳ Vọng (Expected Value)</h2>
+                    <div class="ev-details">
+                        <div class="ev-row" id="ev-row-state">
+                            <span class="ev-label">EV Trạng thái hiện tại:</span>
+                            <span class="ev-val" id="ev-val-state">-</span>
+                        </div>
+                        <div class="ev-row" id="ev-row-draw">
+                            <span class="ev-label">EV Rút tiếp (Draw):</span>
+                            <span class="ev-val" id="ev-val-draw">-</span>
+                        </div>
+                        <div class="ev-row" id="ev-row-stop">
+                            <span class="ev-label">EV Dừng lại (Stop):</span>
+                            <span class="ev-val" id="ev-val-stop">-</span>
+                        </div>
+                        <div class="ev-row" id="ev-row-abandon">
+                            <span class="ev-label">EV Bỏ bài (Abandon):</span>
+                            <span class="ev-val" id="ev-val-abandon">-</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Remaining Deck Probabilities -->
+                <div class="panel">
+                    <h2 class="panel-title" style="font-size: 0.8rem; margin-bottom: 0.75rem;">Bài Còn Lại Trong Deck & Xác Suất Rút Kế</h2>
+                    <div class="prob-list" id="prob-list">
+                        <!-- Probability rows for BP 1-5 & Overflow -->
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Hidden Canvas for Image Processing -->
+    <canvas id="proc-canvas" style="display: none;"></canvas>
+
+    <!-- Load scripts -->
+    <script src="../solver.js"></script>
+    <script src="./config.js"></script>
+    <script src="./assistant.js"></script>
+</body>
+</html>
