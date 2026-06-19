@@ -11,13 +11,16 @@ Hiện tại ứng dụng đã được phát triển thêm phiên bản **Deskt
 ## Các tính năng chính
 
 1. **Desktop Live Assistant (Electron App)**: 
-   - Hoạt động độc lập dưới dạng cửa sổ trợ lý song song với game.
-   - **Phím tắt F4**: Bấm F4 tại bất cứ đâu (kể cả khi đang trong game) để tự động chụp màn hình, nhận diện số lượng bài còn lại trong Deck và trạng thái Nhân đôi (x2).
-   - **Nhận diện tự động**: Thuật toán xử lý ảnh thông minh phân tích lưới đặc trưng 3x3 Grid Density để nhận diện chính xác số lượng bài còn lại, sau đó dùng phép trừ so với Preset để tính toán các lá bài bạn đang cầm trên tay (`Hand = StartingDeck - ScannedRemainingDeck`), đảm bảo chính xác 100% kể cả khi mở app giữa trận.
-   - **Giao diện tối ưu**: Hiển thị ngay đề xuất nước đi (Rút, Dừng, Nhân đôi, Bỏ bài) cùng EV tối ưu trực quan, duy trì gợi ý cho tới khi quét lần tiếp theo.
+   - Hoạt động độc lập dưới dạng cửa sổ trợ lý song song với game, hỗ trợ cả giao diện lớn (Normal) và giao diện HUD thu nhỏ (Overlay).
+   - **Tự động co dãn giao diện (UI Auto-Scaling)**: Tự động điều chỉnh kích thước cửa sổ Electron và áp dụng CSS Zoom (ví dụ: `zoom: 0.75` cho màn hình Full HD `1920x1080`) để giao diện hiển thị sắc nét, khít hoàn hảo với mọi độ phân giải.
+   - **Phím tắt F4 & F5**: Bấm F4 để tự động quét game (hoặc bật/tắt Auto-Scan), F5 để ép quét nhanh.
+   - **Nhận diện OCR khớp mẫu (OCR Template Matching)**: Đọc trực tiếp các chữ số trên mặt lá bài đang có trên tay bằng giải pháp khớp mẫu ảnh nhị phân `32x48` (sử dụng toán tử bitwise IoU cực nhanh trên CPU). Hỗ trợ cơ chế ngưỡng động thích ứng (Adaptive Threshold) đề phòng sự thay đổi độ sáng trong game.
+   - **Tự động co dãn tọa độ quét (Resolution Auto-Scaling)**: Tự động nhân tỷ lệ co dãn các vùng quét tọa độ (attempts, doubles, cards, deck counts...) dựa trên tỷ lệ màn hình thực tế so với cấu hình gốc 2K (chỉ cần là tỷ lệ 16:9).
+   - **Chỉ số xác suất mạo hiểm (Draw-to-Target Policy)**: Hiển thị trực quan xác suất đạt điểm 10 (`prob10`), điểm 9-10 (`prob9Plus`) và xác suất tràn điểm vòng chu kỳ hiện tại (`overflowProb` tự động chuyển đổi nhãn `>10 BP` hoặc `>21 BP` theo số điểm trên tay) khi người chơi quyết định mạo hiểm rút tiếp liên tục.
+   - **Giá trị kỳ vọng (Expected Value - EV)**: Tính toán chính xác theo Mô hình Quyết định Tối ưu (Optimal Policy) bao gồm các hành vi dừng lại, rút tiếp, nhân đôi hay bỏ bài miễn phí.
 2. **Interactive Simulator**: Giả lập rút bài thực tế trực quan trên nền Web, hiển thị xác suất lật bài, xác suất quá tải (overflow) và đề xuất nước đi tối ưu theo thời gian thực.
 3. **Monte Carlo Simulator**: Giả lập tự động 10,000 ngày cho 6 phương án chiến thuật khác nhau để so sánh doanh thu trung bình, độ lệch chuẩn, tỉ lệ quá tải và tỉ lệ bỏ bài.
-4. **Custom Config**: Cho phép cấu hình cấp đấu trường (Level 1-4) và số lượng thẻ bài trong deck (1-5 BP).
+4. **Custom Config**: Cho phép cấu hình bộ bài xuất phát và lưu cấu hình tuỳ chỉnh.
 
 ---
 
@@ -42,7 +45,7 @@ Trình duyệt sẽ mở tại `http://localhost:3000`.
 ```bash
 npm run electron:dev
 ```
-Lệnh này sẽ khởi động server Vite trước, sau đó mở cửa sổ Electron kết nối với Vite kèm DevTools (để bạn dễ debug các thông số quét).
+Lệnh này sẽ khởi động server Vite trước, sau đó mở cửa sổ Electron kết nối với Vite kèm DevTools.
 
 ### 3. Đóng gói ứng dụng (.exe)
 Để đóng gói thành file cài đặt hoặc file chạy portable cho Windows (output sẽ nằm trong thư mục `release/`):
@@ -54,12 +57,10 @@ npm run dist:win
 
 ## Cấu hình Tọa độ & Độ phân giải màn hình
 
-Toàn bộ tọa độ quét màn hình được quản lý tập trung trong file [electron/config.js](file:///d:/A9E%20sword/electron/config.js). 
+Toàn bộ tọa độ quét màn hình gốc được quản lý tập trung trong file [electron/config.js](file:///d:/A9E%20sword/electron/config.js). 
 
-Mặc định ứng dụng đang được cấu hình tối ưu cho độ phân giải **2K (2560x1440)**. 
-Nếu bạn chơi game ở độ phân giải khác (ví dụ: Full HD `1920x1080` hoặc 4K `3840x2160`), bạn có thể thêm cấu hình mới vào mục `resolutions` trong file `config.js` với các thông số:
-- `deckCounts`: Mảng chứa tọa độ của 5 ô hiển thị số bài còn lại (X, Y, Width, Height) tương ứng với 5 dòng bài (1 BP -> 5 BP).
-- `doubleSwitch`: Tọa độ vùng quét chữ màu trắng của ô Nhân Đôi ở phía dưới màn hình (X, Y, Width, Height).
+Mặc định ứng dụng được cấu hình tối ưu cho độ phân giải **2K (2560x1440)**. 
+Khi chạy game ở các độ phân giải 16:9 khác như Full HD `1920x1080` hoặc 4K `3840x2160`, ứng dụng sẽ **tự động co dãn tỷ lệ tọa độ** tương ứng thông qua hàm `getActiveConfig(width, height)`.
 
-*Thuật toán phân tích Double Switch đếm số lượng pixel có giá trị màu sáng trắng (RGB > 220). Nếu số lượng pixel trắng vượt quá 200, hệ thống coi như Nhân Đôi đang được BẬT.*
+Bạn không cần cấu hình thủ công tọa độ cho từng màn hình nữa trừ khi tỷ lệ màn hình game của bạn khác 16:9. Trong trường hợp đó, bạn có thể bổ sung độ phân giải mới vào cấu hình `resolutions` của `config.js`.
 

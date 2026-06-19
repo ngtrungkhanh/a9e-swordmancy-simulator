@@ -51,6 +51,12 @@ let lastScannedHand = [];
 let lastScannedSlots = Array(5).fill(null);
 let accumulatedBills = 0;
 let scanStarted = false;
+let uiScale = 1.0;
+const scrWidth = window.screen.width;
+if (scrWidth < 2560) {
+    uiScale = scrWidth / 2560;
+    if (uiScale < 0.75) uiScale = 0.75;
+}
 
 // Debug switch: true = ignore deck-diff/reconcile and display hand from slot OCR only.
 const DEBUG_SLOT_OCR_ONLY = true;
@@ -120,7 +126,10 @@ function toggleCustomDeckConfig() {
 
 // Initialize UI
 document.addEventListener('DOMContentLoaded', () => {
-    log('assistant.js: DOM Content Loaded');
+    log(`assistant.js: DOM Content Loaded. Applying UI scale zoom: ${uiScale}`);
+    document.body.style.zoom = uiScale;
+    document.body.style.width = `${100 / uiScale}vw`;
+    document.body.style.height = `${100 / uiScale}vh`;
 
     // Custom Window Control Listeners
     document.getElementById('win-btn-minimize').onclick = () => {
@@ -226,16 +235,19 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 const startX = e.screenX;
                 const startY = e.screenY;
-                const startWidth = window.innerWidth;
-                const startHeight = window.innerHeight;
+                const startWidth = window.outerWidth || window.innerWidth;
+                const startHeight = window.outerHeight || window.innerHeight;
                 
                 const onMouseMove = (moveEvent) => {
                     const deltaX = moveEvent.screenX - startX;
                     const deltaY = moveEvent.screenY - startY;
                     
-                    // Min dimensions based on mode (640x220 for overlay HUD)
-                    const minW = currentWindowMode === 'overlay' ? 400 : 1024;
-                    const minH = currentWindowMode === 'overlay' ? 150 : 700;
+                    // Min dimensions based on mode, scaled by uiScale to match physical pixels
+                    const baseMinW = currentWindowMode === 'overlay' ? 400 : 1024;
+                    const baseMinH = currentWindowMode === 'overlay' ? 150 : 700;
+                    
+                    const minW = Math.round(baseMinW * uiScale);
+                    const minH = Math.round(baseMinH * uiScale);
                     
                     const newWidth = Math.max(minW, startWidth + deltaX);
                     const newHeight = Math.max(minH, startHeight + deltaY);
@@ -254,6 +266,62 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     } else {
         log('electronAPI is not available. Live scanning disabled.');
+    }
+
+    // Fallback file picker for offline testing (in case UAC UIPI blocks drag-and-drop)
+    const lnkSelectFile = document.getElementById('lnk-select-file');
+    if (lnkSelectFile) {
+        lnkSelectFile.onclick = async (e) => {
+            e.preventDefault();
+            log('lnk-select-file clicked, invoking select-file IPC');
+            
+            if (window.electronAPI && window.electronAPI.selectFile) {
+                try {
+                    updateBadgeStatus('ĐANG CHỌN FILE...', 'scanning');
+                    const dataUrl = await window.electronAPI.selectFile();
+                    if (dataUrl) {
+                        log('File selected and loaded successfully via native dialog.');
+                        updateBadgeStatus('ĐANG ĐỌC FILE...', 'scanning');
+                        processScreenshot(dataUrl);
+                    } else {
+                        log('File selection canceled or returned empty.');
+                        updateBadgeStatus('ĐÃ HỦY CHỌN FILE');
+                        setTimeout(() => {
+                            const currentStatus = document.getElementById('app-status').innerText;
+                            if (currentStatus === 'ĐÃ HỦY CHỌN FILE') {
+                                updateBadgeStatus('SẴN SÀNG QUÉT (F4)');
+                            }
+                        }, 2000);
+                    }
+                } catch (err) {
+                    log(`Error opening native file dialog: ${err.message}`);
+                    updateBadgeStatus('LỖI CHỌN FILE');
+                }
+            } else {
+                // Fallback to browser file input click in case electronAPI is not available
+                const fileInput = document.getElementById('file-input');
+                if (fileInput) {
+                    fileInput.click();
+                }
+            }
+        };
+        
+        const fileInput = document.getElementById('file-input');
+        if (fileInput) {
+            fileInput.onchange = (e) => {
+                const files = e.target.files;
+                if (files && files.length > 0) {
+                    const file = files[0];
+                    log(`File selected via picker fallback: ${file.name} (type: "${file.type || 'unknown'}")`);
+                    updateBadgeStatus('ĐANG ĐỌC FILE...', 'scanning');
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        processScreenshot(event.target.result);
+                    };
+                    reader.readAsDataURL(file);
+                }
+            };
+        }
     }
 });
 
@@ -407,6 +475,10 @@ function setupEventListeners() {
     };
 
     // Drag and drop test screenshot support for easy offline verification
+    window.addEventListener('dragenter', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+    });
     window.addEventListener('dragover', (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -417,17 +489,22 @@ function setupEventListeners() {
         const files = e.dataTransfer.files;
         if (files && files.length > 0) {
             const file = files[0];
-            if (file.type.startsWith('image/')) {
-                log(`File dropped: ${file.name}`);
+            const isImage = (file.type && file.type.startsWith('image/')) || 
+                            (file.name && file.name.match(/\.(png|jpe?g|gif|webp|bmp)$/i));
+            if (isImage) {
+                log(`File dropped: ${file.name} (type: "${file.type || 'unknown'}")`);
                 updateBadgeStatus('ĐANG ĐỌC FILE...', 'scanning');
                 const reader = new FileReader();
                 reader.onload = (event) => {
                     processScreenshot(event.target.result);
                 };
                 reader.readAsDataURL(file);
+            } else {
+                log(`Dropped file ignored (not an image): ${file.name} (type: "${file.type || 'unknown'}")`);
             }
         }
     });
+
 }
 
 function forceScanNow() {
@@ -719,166 +796,17 @@ function processScreenshot(dataUrl) {
         analyzeCanvas(ctx, img.width, img.height);
     };
 }
+// Card digit classification helper functions are now loaded from ocr.js
 
 
-
-function getGridStatsFromBuffer(cropBuffer, cropW, cropH) {
-    let darkPixels = 0;
-    let minX = cropW, maxX = -1, minY = cropH, maxY = -1;
-
-    for (let cy = 0; cy < cropH; cy++) {
-        for (let cx = 0; cx < cropW; cx++) {
-            if (cropBuffer[cy * cropW + cx] === 1) {
-                darkPixels++;
-                if (cx < minX) minX = cx;
-                if (cx > maxX) maxX = cx;
-                if (cy < minY) minY = cy;
-                if (cy > maxY) maxY = cy;
-            }
-        }
-    }
-
-    if (darkPixels < 30) {
-        return { darkPixels, reason: `darkPixels < 30 (${darkPixels})` };
-    }
-
-    const w = maxX - minX + 1;
-    const h = maxY - minY + 1;
-    const cellW = w / 3;
-    const cellH = h / 3;
-    const grid = Array(9).fill(0);
-
-    for (let cy = minY; cy <= maxY; cy++) {
-        for (let cx = minX; cx <= maxX; cx++) {
-            if (cropBuffer[cy * cropW + cx] === 1) {
-                const cellX = Math.min(2, Math.floor((cx - minX) / cellW));
-                const cellY = Math.min(2, Math.floor((cy - minY) / cellH));
-                grid[cellY * 3 + cellX]++;
-            }
-        }
-    }
-
-    const normGrid = grid.map(v => Number((v / darkPixels).toFixed(3)));
-    return { darkPixels, minX, maxX, minY, maxY, w, h, normGrid };
-}
-
-function getLargestDigitComponent(cropBuffer, cropW, cropH) {
-    const visited = new Uint8Array(cropW * cropH);
-    let best = null;
-
-    for (let y = 0; y < cropH; y++) {
-        for (let x = 0; x < cropW; x++) {
-            const startIdx = y * cropW + x;
-            if (visited[startIdx] || cropBuffer[startIdx] !== 1) continue;
-
-            const stack = [startIdx];
-            visited[startIdx] = 1;
-            const pixels = [];
-            let minX = x, maxX = x, minY = y, maxY = y;
-
-            while (stack.length > 0) {
-                const idx = stack.pop();
-                const cx = idx % cropW;
-                const cy = Math.floor(idx / cropW);
-                pixels.push(idx);
-
-                if (cx < minX) minX = cx;
-                if (cx > maxX) maxX = cx;
-                if (cy < minY) minY = cy;
-                if (cy > maxY) maxY = cy;
-
-                for (let dy = -1; dy <= 1; dy++) {
-                    for (let dx = -1; dx <= 1; dx++) {
-                        if (dx === 0 && dy === 0) continue;
-                        const nx = cx + dx;
-                        const ny = cy + dy;
-                        if (nx < 0 || nx >= cropW || ny < 0 || ny >= cropH) continue;
-                        const nextIdx = ny * cropW + nx;
-                        if (!visited[nextIdx] && cropBuffer[nextIdx] === 1) {
-                            visited[nextIdx] = 1;
-                            stack.push(nextIdx);
-                        }
-                    }
-                }
-            }
-
-            const w = maxX - minX + 1;
-            const h = maxY - minY + 1;
-            const count = pixels.length;
-            const looksLikeDigit = count >= 30 && w >= 4 && h >= 12 && w <= 65 && h <= 80;
-            if (!looksLikeDigit) continue;
-
-            const centerY = (minY + maxY) / 2;
-            const score = count - Math.max(0, centerY - cropH * 0.65) * 4;
-            if (!best || score > best.score) {
-                best = { pixels, minX, maxX, minY, maxY, w, h, count, score };
-            }
-        }
-    }
-
-    if (!best) return null;
-
-    const componentBuffer = new Uint8Array(cropW * cropH);
-    best.pixels.forEach(idx => {
-        componentBuffer[idx] = 1;
-    });
-    return componentBuffer;
-}
-
-function classifyCardDigitFromCrop(cropPixels, cropW, cropH) {
-    const cropBuffer = new Uint8Array(cropW * cropH);
-
-    for (let cy = 0; cy < cropH; cy++) {
-        for (let cx = 0; cx < cropW; cx++) {
-            const srcIdx = (cy * cropW + cx) * 4;
-            const r = cropPixels[srcIdx];
-            const g = cropPixels[srcIdx+1];
-            const b = cropPixels[srcIdx+2];
-            const val = (r + g + b) / 3;
-            if (val <= 110) {
-                cropBuffer[cy * cropW + cx] = 1;
-            }
-        }
-    }
-
-    const componentBuffer = getLargestDigitComponent(cropBuffer, cropW, cropH);
-    const stats = getGridStatsFromBuffer(componentBuffer || cropBuffer, cropW, cropH);
-    if (!stats.normGrid) {
-        return { digit: null, ...stats };
-    }
-
-    let digit = classifyDigit(stats.w, stats.h, stats.normGrid);
-    // Card-slot 1s are wider than header/deck-count 1s because the card font has
-    // glow/outline, but their lower-left cell stays nearly empty.
-    if (
-        digit === 3 &&
-        stats.w <= 26 &&
-        stats.normGrid[6] < 0.02 &&
-        stats.normGrid[2] > 0.13 &&
-        stats.normGrid[5] > 0.13 &&
-        stats.normGrid[8] > 0.12
-    ) {
-        digit = 1;
-    }
-    // Card-slot 5s sometimes look like 8 in the coarse 3x3 grid when the
-    // bottom-right cell is just under the generic 0.10 threshold.
-    if (digit === 8 && stats.normGrid[3] > 0.08 && stats.normGrid[8] > 0.085) {
-        digit = 5;
-    }
-    if (digit < 1 || digit > 5) {
-        return { digit: null, ...stats, rejectedDigit: digit, reason: `digit ${digit} outside 1..5` };
-    }
-
-    return { digit, ...stats };
-}
-
-function isFaceCardSlot(ctx, cardPos) {
+function isFaceCardSlot(ctx, cardPos, activeConfig) {
     // Face cards have a dark "ACCESS POINT" strip immediately left of the BP digit.
     // Empty/card-back slots keep this area as pale cyan/white and should not be OCR'ed.
-    const stripX = cardPos.x;
-    const stripY = cardPos.y + 10;
-    const stripW = 300;
-    const stripH = 50;
+    const rel = activeConfig.cardFaceStripRelative || { xOffset: 0, yOffset: 10, width: 300, height: 50 };
+    const stripX = cardPos.x + rel.xOffset;
+    const stripY = cardPos.y + rel.yOffset;
+    const stripW = rel.width;
+    const stripH = rel.height;
     const pixels = getCropBuffer(ctx, stripX, stripY, stripW, stripH);
     let stripPixels = 0;
 
@@ -890,7 +818,8 @@ function isFaceCardSlot(ctx, cardPos) {
         }
     }
 
-    return { isFace: stripPixels > 80, stripPixels };
+    const minStripPixels = Math.max(10, Math.round(stripW * stripH * 0.00533));
+    return { isFace: stripPixels > minStripPixels, stripPixels };
 }
 
 function scanHandFromSlots(ctx, activeConfig) {
@@ -898,7 +827,7 @@ function scanHandFromSlots(ctx, activeConfig) {
     if (!activeConfig || !activeConfig.cards) return scannedSlots;
     
     activeConfig.cards.forEach((cardPos, cardIdx) => {
-        const faceCheck = isFaceCardSlot(ctx, cardPos);
+        const faceCheck = isFaceCardSlot(ctx, cardPos, activeConfig);
         if (!faceCheck.isFace) {
             log(`Slot ${cardIdx + 1} OCR: skipped card-back/empty accessStrip=${faceCheck.stripPixels}`);
             return;
@@ -916,9 +845,11 @@ function scanHandFromSlots(ctx, activeConfig) {
             scannedSlots[cardIdx] = result.digit;
         }
 
-        const bbox = result.normGrid ? `bbox=(${result.minX},${result.minY})-(${result.maxX},${result.maxY}) w=${result.w} h=${result.h}` : 'bbox=n/a';
-        const grid = result.normGrid ? ` grid=[${result.normGrid.join(',')}]` : '';
-        log(`Slot ${cardIdx + 1} OCR: ${result.digit === null ? 'miss' : result.digit} dark=${result.darkPixels || 0} ${bbox}${grid}${result.reason ? ` reason=${result.reason}` : ''}`);
+        const bbox = result.w ? `bbox=(${result.minX},${result.minY})-(${result.maxX},${result.maxY}) w=${result.w} h=${result.h}` : 'bbox=n/a';
+        const scoresStr = result.scores ? ` scores={${Object.entries(result.scores).map(([d, s]) => `${d}:${s}`).join(',')}}` : '';
+        const metrics = result.confidence !== undefined ? ` conf=${result.confidence.toFixed(2)} margin=${result.margin.toFixed(2)} thresh=${result.threshold}${result.adaptive ? '(adapt)' : ''}` : '';
+        
+        log(`Slot ${cardIdx + 1} OCR: ${result.digit === null ? 'miss' : result.digit} dark=${result.darkPixels || 0} ${bbox}${scoresStr}${metrics}${result.reason ? ` reason=${result.reason}` : ''}`);
     });
     return scannedSlots;
 }
@@ -994,7 +925,7 @@ function reconcileHandSlots(scannedSlots, deducedHand) {
 
 function analyzeCanvas(ctx, width, height) {
     try {
-        const activeConfig = window.getActiveConfig();
+        const activeConfig = window.getActiveConfig(width, height);
         const deckCounts = activeConfig.deckCounts;
         const doubleSwitch = activeConfig.doubleSwitch;
 
@@ -1071,29 +1002,31 @@ function analyzeCanvas(ctx, width, height) {
                 whitePixels++;
             }
         }
-        const isDoubled = whitePixels > 200;
+        const isDoubled = whitePixels > Math.max(20, Math.round(doubleSwitch.width * doubleSwitch.height * 0.026)); // 200 out of 7500 is ~2.6%
         log(`Double active state: ${isDoubled} (${whitePixels} white pixels)`);
 
         // Detect capsule elements presence to identify mode
-        const capsuleX = 1100, capsuleY = 1158, capsuleW = 300, capsuleH = 20;
-        const capPixels = getCropBuffer(ctx, capsuleX, capsuleY, capsuleW, capsuleH);
+        const capConfig = activeConfig.doubleSwitchCapsule;
+        const capPixels = getCropBuffer(ctx, capConfig.x, capConfig.y, capConfig.width, capConfig.height);
         let darkCap = 0;
-        for (let i = 0; i < capsuleW * capsuleH; i++) {
+        for (let i = 0; i < capConfig.width * capConfig.height; i++) {
             if ((capPixels[i*4] + capPixels[i*4+1] + capPixels[i*4+2]) / 3 < 110) {
                 darkCap++;
             }
         }
-        const isDoubleSwitchPresent = darkCap > 50;
+        const minDarkCap = Math.max(10, Math.round(capConfig.width * capConfig.height * 0.0083));
+        const isDoubleSwitchPresent = darkCap > minDarkCap;
 
-        const bracketX = 1040, bracketY = 114, bracketW = 15, bracketH = 18;
-        const brPixels = getCropBuffer(ctx, bracketX, bracketY, bracketW, bracketH);
+        const brConfig = activeConfig.bracket;
+        const brPixels = getCropBuffer(ctx, brConfig.x, brConfig.y, brConfig.width, brConfig.height);
         let darkBr = 0;
-        for (let i = 0; i < bracketW * bracketH; i++) {
+        for (let i = 0; i < brConfig.width * brConfig.height; i++) {
             if ((brPixels[i*4] + brPixels[i*4+1] + brPixels[i*4+2]) / 3 < 110) {
                 darkBr++;
             }
         }
-        const isBracketPresent = darkBr > 20;
+        const minDarkBr = Math.max(5, Math.round(brConfig.width * brConfig.height * 0.074));
+        const isBracketPresent = darkBr > minDarkBr;
 
         // Determine if Free Trial Mode is active
         let isFreeTrial = false;
@@ -1122,8 +1055,9 @@ function analyzeCanvas(ctx, width, height) {
 
         // 3. Scan Remaining attempts & doubles counts if in rewarded mode
         if (!isFreeTrial) {
-            // Attempts Count (x: 1190-1215, y: 114-134)
-            const scannedAttempts = scanDigitInRegion(ctx, 1190, 114, 1215, 134);
+            // Attempts Count
+            const attReg = activeConfig.attemptsRegion;
+            const scannedAttempts = scanDigitInRegion(ctx, attReg.xStart, attReg.yStart, attReg.xEnd, attReg.yEnd);
             if (scannedAttempts !== null && scannedAttempts >= 0 && scannedAttempts <= 3) {
                 attemptsLeft = scannedAttempts;
                 localStorage.setItem('attemptsLeft', attemptsLeft);
@@ -1133,9 +1067,10 @@ function analyzeCanvas(ctx, width, height) {
                 }
             }
 
-            // Doubles Count (x: 1480-1505, y: 1155-1180)
+            // Doubles Count
             if (isDoubleSwitchPresent) {
-                const scannedDoubles = scanDigitInRegion(ctx, 1480, 1155, 1505, 1180);
+                const dblReg = activeConfig.doublesRegion;
+                const scannedDoubles = scanDigitInRegion(ctx, dblReg.xStart, dblReg.yStart, dblReg.xEnd, dblReg.yEnd);
                 if (scannedDoubles !== null && scannedDoubles >= 0 && scannedDoubles <= 2) {
                     doublesLeft = scannedDoubles;
                     localStorage.setItem('doublesLeft', doublesLeft);
@@ -1382,18 +1317,20 @@ function runSolver(remainingDeck, isDoubled, isFreeTrial, scannedSlots) {
     overflowRow.style.borderTop = '1px dashed rgba(255, 255, 255, 0.05)';
     overflowRow.style.paddingTop = '0.5rem';
     overflowRow.style.marginTop = '0.5rem';
-    overflowRow.innerHTML = `<span class="ev-label" style="color: var(--color-red);">Xác suất tràn (>21 BP):</span><span class="ev-val" style="color: var(--color-red); font-weight: bold;">${(advice.details.overflowProb * 100).toFixed(0)}%</span>`;
+    const overflowLabel = sum < 10 ? 'Xác suất tràn (>10 BP):' : 'Xác suất tràn (>21 BP):';
+    overflowRow.innerHTML = `<span class="ev-label" style="color: var(--color-red);">${overflowLabel}</span><span class="ev-val" style="color: var(--color-red); font-weight: bold;">${(advice.details.overflowProb * 100).toFixed(0)}%</span>`;
     probList.appendChild(overflowRow);
 
     const prob10Row = document.createElement('div');
     prob10Row.className = 'ev-row';
-    prob10Row.innerHTML = `<span class="ev-label" style="color: var(--color-gold);">Xác suất ra 10 BP (hoặc 21):</span><span class="ev-val" style="color: var(--color-gold); font-weight: bold;">${(advice.details.prob10 * 100).toFixed(0)}%</span>`;
+    prob10Row.innerHTML = `<span class="ev-label" style="color: var(--color-gold);">Xác suất ra điểm 10:</span><span class="ev-val" style="color: var(--color-gold); font-weight: bold;">${(advice.details.prob10 * 100).toFixed(0)}%</span>`;
     probList.appendChild(prob10Row);
 
     const prob9PlusRow = document.createElement('div');
     prob9PlusRow.className = 'ev-row';
-    prob9PlusRow.innerHTML = `<span class="ev-label" style="color: #10b981;">Xác suất ra 9-10 BP (hoặc 20-21):</span><span class="ev-val" style="color: #10b981; font-weight: bold;">${(advice.details.prob9Plus * 100).toFixed(0)}%</span>`;
+    prob9PlusRow.innerHTML = `<span class="ev-label" style="color: #10b981;">Xác suất ra điểm 9-10:</span><span class="ev-val" style="color: #10b981; font-weight: bold;">${(advice.details.prob9Plus * 100).toFixed(0)}%</span>`;
     probList.appendChild(prob9PlusRow);
+
 
     // Remaining probabilities HUD UI
     const hudProbList = document.getElementById('hud-prob-list');
@@ -1413,18 +1350,21 @@ function runSolver(remainingDeck, isDoubled, isFreeTrial, scannedSlots) {
     hudOverflowRow.style.borderTop = '1px dashed rgba(255, 255, 255, 0.05)';
     hudOverflowRow.style.paddingTop = '2px';
     hudOverflowRow.style.marginTop = '2px';
-    hudOverflowRow.innerHTML = `<span class="hud-ev-lbl" style="color: var(--color-red);">Tràn (>21):</span><span class="hud-ev-val" style="color: var(--color-red);">${(advice.details.overflowProb * 100).toFixed(0)}%</span>`;
+    const hudOverflowLabel = sum < 10 ? 'Tràn (>10):' : 'Tràn (>21):';
+    hudOverflowRow.innerHTML = `<span class="hud-ev-lbl" style="color: var(--color-red);">${hudOverflowLabel}</span><span class="hud-ev-val" style="color: var(--color-red);">${(advice.details.overflowProb * 100).toFixed(0)}%</span>`;
     hudProbList.appendChild(hudOverflowRow);
 
     const hudProb10Row = document.createElement('div');
     hudProb10Row.className = 'hud-ev-row';
-    hudProb10Row.innerHTML = `<span class="hud-ev-lbl" style="color: var(--color-gold);">Tỷ lệ ra 10 (21):</span><span class="hud-ev-val" style="color: var(--color-gold);">${(advice.details.prob10 * 100).toFixed(0)}%</span>`;
+    hudProb10Row.innerHTML = `<span class="hud-ev-lbl" style="color: var(--color-gold);">Tỷ lệ ra điểm 10:</span><span class="hud-ev-val" style="color: var(--color-gold);">${(advice.details.prob10 * 100).toFixed(0)}%</span>`;
     hudProbList.appendChild(hudProb10Row);
 
     const hudProb9PlusRow = document.createElement('div');
     hudProb9PlusRow.className = 'hud-ev-row';
-    hudProb9PlusRow.innerHTML = `<span class="hud-ev-lbl" style="color: #10b981;">Tỷ lệ ra 9-10 (20-21):</span><span class="hud-ev-val" style="color: #10b981;">${(advice.details.prob9Plus * 100).toFixed(0)}%</span>`;
+    hudProb9PlusRow.innerHTML = `<span class="hud-ev-lbl" style="color: #10b981;">Tỷ lệ ra điểm 9-10:</span><span class="hud-ev-val" style="color: #10b981;">${(advice.details.prob9Plus * 100).toFixed(0)}%</span>`;
     hudProbList.appendChild(hudProb9PlusRow);
+
+
 }
 
 function renderHandCards(hand) {

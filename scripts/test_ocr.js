@@ -1,35 +1,11 @@
 const { app, nativeImage } = require('electron');
 const path = require('path');
+const fs = require('fs');
 
-// Mock getActiveConfig since we don't run in browser
-const CONFIG = {
-    resolutions: {
-        '2K': {
-            width: 2560,
-            height: 1440,
-            cards: [
-                { x: 100, y: 300, width: 370, height: 570 },
-                { x: 490, y: 300, width: 370, height: 570 },
-                { x: 880, y: 300, width: 370, height: 570 },
-                { x: 1270, y: 300, width: 370, height: 570 },
-                { x: 1660, y: 300, width: 370, height: 570 }
-            ],
-            cardNumberRelative: {
-                xOffset: 295,
-                yOffset: 0,
-                width: 75,
-                height: 90
-            },
-            deckCounts: [
-                { x: 2437, y: 245, width: 60, height: 40, label: '1 BP' },
-                { x: 2437, y: 343, width: 60, height: 40, label: '2 BP' },
-                { x: 2437, y: 440, width: 60, height: 40, label: '3 BP' },
-                { x: 2437, y: 538, width: 60, height: 40, label: '4 BP' },
-                { x: 2437, y: 636, width: 60, height: 40, label: '5 BP' }
-            ]
-        }
-    }
-};
+// Import OCR logic, Solver and Configuration
+const { classifyCardDigitFromCrop } = require('../electron/ocr.js');
+const { getActiveConfig } = require('../electron/config.js');
+const { SwordmancySolver } = require('../solver.js');
 
 function classifyDigit(w, h, normGrid) {
     if (w < 13) return 1;
@@ -71,34 +47,74 @@ function classifyDigit(w, h, normGrid) {
     return 8;
 }
 
+function isFaceCardSlot(bitmap, size, cardPos, activeConfig) {
+    const rel = activeConfig.cardFaceStripRelative || { xOffset: 0, yOffset: 10, width: 300, height: 50 };
+    const stripX = cardPos.x + rel.xOffset;
+    const stripY = cardPos.y + rel.yOffset;
+    const stripW = rel.width;
+    const stripH = rel.height;
+    let stripPixels = 0;
+
+    for (let cy = 0; cy < stripH; cy++) {
+        for (let cx = 0; cx < stripW; cx++) {
+            const idx = ((stripY + cy) * size.width + (stripX + cx)) * 4;
+            const val = (bitmap[idx] + bitmap[idx + 1] + bitmap[idx + 2]) / 3;
+            if (val < 85) {
+                stripPixels++;
+            }
+        }
+    }
+
+    const minStripPixels = Math.max(10, Math.round(stripW * stripH * 0.00533));
+    return { isFace: stripPixels > minStripPixels, stripPixels };
+}
+
 app.whenReady().then(() => {
-    console.log('--- STARTING OCR TEST ON LOCAL SCREENSHOTS ---');
+    console.log('--- STARTING OCR TEMPLATE MATCHING & AUTO-SCALING TEST ---');
     const projectDir = path.join(__dirname, '..');
-    const images = ['1.png', '2.png', '3.png', '4.png'];
+    
+    const testCases = [
+        { file: '1.png', expected: [null, null, null, null, null] },
+        { file: '2.png', expected: [1, 3, null, null, null] },
+        { file: '3.png', expected: [1, 3, 2, 5, 1] },
+        { file: '4.png', expected: [null, null, null, null, null] }
+    ];
 
-    const config = CONFIG.resolutions['2K'];
+    let totalFailed = 0;
 
-    images.forEach(imgName => {
+    testCases.forEach(testCase => {
+        const imgName = testCase.file;
         const imgPath = path.join(projectDir, 'Screenshoot', imgName);
-        console.log(`\nAnalyzing ${imgName}...`);
+        console.log(`\n=================== ANALYZING: ${imgName} ===================`);
+        
         const img = nativeImage.createFromPath(imgPath);
         if (img.isEmpty()) {
             console.error(`Failed to load ${imgName}`);
+            totalFailed++;
             return;
         }
 
         const size = img.getSize();
         console.log(`Resolution: ${size.width}x${size.height}`);
-
+        
+        // Retrieve config using screen size to trigger dynamic auto-scaling
+        const activeConfig = getActiveConfig(size.width, size.height);
+        console.log(`Active config target dimensions: ${activeConfig.width}x${activeConfig.height}`);
+        
         const bitmap = img.toBitmap(); // RGBA buffer
+        let solveAttempts = 3;
+        let solveAbandons = 3;
+        let solveDoubles = 2;
+        const remainingDeck = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+
 
         // Scan double switch presence
         console.log('--- Double active switch & capsule test ---');
         let whitePixels = 0;
-        const dsX = 1100, dsY = 1150, dsW = 300, dsH = 25;
-        for (let cy = 0; cy < dsH; cy++) {
-            for (let cx = 0; cx < dsW; cx++) {
-                const pixelIdx = ((dsY + cy) * size.width + (dsX + cx)) * 4;
+        const dsConfig = activeConfig.doubleSwitch;
+        for (let cy = 0; cy < dsConfig.height; cy++) {
+            for (let cx = 0; cx < dsConfig.width; cx++) {
+                const pixelIdx = ((dsConfig.y + cy) * size.width + (dsConfig.x + cx)) * 4;
                 const r = bitmap[pixelIdx];
                 const g = bitmap[pixelIdx + 1];
                 const b = bitmap[pixelIdx + 2];
@@ -107,31 +123,31 @@ app.whenReady().then(() => {
                 }
             }
         }
-        const isDoubled = whitePixels > 200;
+        const isDoubled = whitePixels > Math.max(20, Math.round(dsConfig.width * dsConfig.height * 0.026));
 
         // Scan capsule text presence
-        const capsuleX = 1100, capsuleY = 1158, capsuleW = 300, capsuleH = 20;
+        const capConfig = activeConfig.doubleSwitchCapsule;
         let darkCap = 0;
-        for (let cy = 0; cy < capsuleH; cy++) {
-            for (let cx = 0; cx < capsuleW; cx++) {
-                const idx = ((capsuleY + cy) * size.width + (capsuleX + cx)) * 4;
+        for (let cy = 0; cy < capConfig.height; cy++) {
+            for (let cx = 0; cx < capConfig.width; cx++) {
+                const idx = ((capConfig.y + cy) * size.width + (capConfig.x + cx)) * 4;
                 const val = (bitmap[idx] + bitmap[idx+1] + bitmap[idx+2]) / 3;
                 if (val < 110) darkCap++;
             }
         }
-        const isDoubleSwitchPresent = darkCap > 50;
+        const isDoubleSwitchPresent = darkCap > Math.max(10, Math.round(capConfig.width * capConfig.height * 0.0083));
 
         // Scan brackets presence
-        const bracketX = 1040, bracketY = 114, bracketW = 15, bracketH = 18;
+        const brConfig = activeConfig.bracket;
         let darkBr = 0;
-        for (let cy = 0; cy < bracketH; cy++) {
-            for (let cx = 0; cx < bracketW; cx++) {
-                const idx = ((bracketY + cy) * size.width + (bracketX + cx)) * 4;
+        for (let cy = 0; cy < brConfig.height; cy++) {
+            for (let cx = 0; cx < brConfig.width; cx++) {
+                const idx = ((brConfig.y + cy) * size.width + (brConfig.x + cx)) * 4;
                 const val = (bitmap[idx] + bitmap[idx+1] + bitmap[idx+2]) / 3;
                 if (val < 110) darkBr++;
             }
         }
-        const isBracketPresent = darkBr > 20;
+        const isBracketPresent = darkBr > Math.max(5, Math.round(brConfig.width * brConfig.height * 0.074));
         const hasDouble = isDoubleSwitchPresent || isDoubled;
         const isFreeTrial = !hasDouble || !isBracketPresent;
 
@@ -144,7 +160,6 @@ app.whenReady().then(() => {
         if (!isFreeTrial) {
             console.log('--- Attempts and Doubles OCR test ---');
             
-            // Helper function to scan digits in region
             function testScanDigit(xStart, yStart, xEnd, yEnd) {
                 const w = xEnd - xStart;
                 const h = yEnd - yStart;
@@ -249,76 +264,59 @@ app.whenReady().then(() => {
                 return 0;
             }
 
-            const attemptsVal = testScanDigit(1190, 114, 1215, 134);
+            const attReg = activeConfig.attemptsRegion;
+            const attemptsVal = testScanDigit(attReg.xStart, attReg.yStart, attReg.xEnd, attReg.yEnd);
             console.log(`Scanned Attempts remaining: ${attemptsVal}`);
+            if (attemptsVal !== null) solveAttempts = attemptsVal;
 
             if (isDoubleSwitchPresent) {
-                const doublesVal = testScanDigit(1480, 1155, 1505, 1180);
+                const dblReg = activeConfig.doublesRegion;
+                const doublesVal = testScanDigit(dblReg.xStart, dblReg.yStart, dblReg.xEnd, dblReg.yEnd);
                 console.log(`Scanned Doubles remaining: ${doublesVal}`);
+                if (doublesVal !== null) solveDoubles = doublesVal;
             }
         }
 
+        const scannedSlots = Array(5).fill(null);
+
         // Scan each of the 5 card slots
         console.log('--- Card Slots scan ---');
-        config.cards.forEach((cardPos, cardIdx) => {
-            const cropX = cardPos.x + config.cardNumberRelative.xOffset;
-            const cropY = cardPos.y + config.cardNumberRelative.yOffset;
-            const cropW = config.cardNumberRelative.width;
-            const cropH = config.cardNumberRelative.height;
-
-            let darkPixels = 0;
-            let minX = cropW, maxX = 0, minY = cropH, maxY = 0;
-            const cropBuffer = new Uint8Array(cropW * cropH);
-
-            for (let cy = 0; cy < cropH; cy++) {
-                for (let cx = 0; cx < cropW; cx++) {
-                    const pixelIdx = ((cropY + cy) * size.width + (cropX + cx)) * 4;
-                    const r = bitmap[pixelIdx];
-                    const g = bitmap[pixelIdx + 1];
-                    const b = bitmap[pixelIdx + 2];
-                    const val = (r + g + b) / 3;
-
-                    if (val <= 110) {
-                        darkPixels++;
-                        if (cx < minX) minX = cx;
-                        if (cx > maxX) maxX = cx;
-                        if (cy < minY) minY = cy;
-                        if (cy > maxY) maxY = cy;
-                        cropBuffer[cy * cropW + cx] = 1;
-                    }
-                }
-            }
-
-            if (darkPixels < 30) {
-                console.log(`Slot ${cardIdx + 1}: Empty (darkPixels = ${darkPixels})`);
+        activeConfig.cards.forEach((cardPos, cardIdx) => {
+            const faceCheck = isFaceCardSlot(bitmap, size, cardPos, activeConfig);
+            if (!faceCheck.isFace) {
+                console.log(`Slot ${cardIdx + 1}: Skip (empty/card-back, strip=${faceCheck.stripPixels})`);
                 return;
             }
 
-            const w = maxX - minX + 1;
-            const h = maxY - minY + 1;
+            const cropX = cardPos.x + activeConfig.cardNumberRelative.xOffset;
+            const cropY = cardPos.y + activeConfig.cardNumberRelative.yOffset;
+            const cropW = activeConfig.cardNumberRelative.width;
+            const cropH = activeConfig.cardNumberRelative.height;
 
-            const cellW = w / 3;
-            const cellH = h / 3;
-            const grid = Array(9).fill(0);
-
-            for (let cy = minY; cy <= maxY; cy++) {
-                for (let cx = minX; cx <= maxX; cx++) {
-                    if (cropBuffer[cy * cropW + cx] === 1) {
-                        const cellX = Math.min(2, Math.floor((cx - minX) / cellW));
-                        const cellY = Math.min(2, Math.floor((cy - minY) / cellH));
-                        grid[cellY * 3 + cellX]++;
-                    }
+            const cropPixels = new Uint8Array(cropW * cropH * 4);
+            for (let cy = 0; cy < cropH; cy++) {
+                for (let cx = 0; cx < cropW; cx++) {
+                    const srcIdx = ((cropY + cy) * size.width + (cropX + cx)) * 4;
+                    const destIdx = (cy * cropW + cx) * 4;
+                    cropPixels[destIdx] = bitmap[srcIdx];
+                    cropPixels[destIdx+1] = bitmap[srcIdx+1];
+                    cropPixels[destIdx+2] = bitmap[srcIdx+2];
+                    cropPixels[destIdx+3] = bitmap[srcIdx+3];
                 }
             }
 
-            const normGrid = grid.map(v => Number((v / darkPixels).toFixed(3)));
-            const digit = classifyDigit(w, h, normGrid);
-            console.log(`Slot ${cardIdx + 1}: Detected Digit ${digit} (w=${w}, h=${h}, darkPixels=${darkPixels})`);
+            const result = classifyCardDigitFromCrop(cropPixels, cropW, cropH);
+            if (result.digit !== null) {
+                scannedSlots[cardIdx] = result.digit;
+            }
+
+            const scoresStr = result.scores ? `scores={${Object.entries(result.scores).map(([d, s]) => `${d}:${s}`).join(',')}}` : 'n/a';
+            console.log(`Slot ${cardIdx + 1}: Detected Digit ${result.digit === null ? 'null' : result.digit} (w=${result.w}, h=${result.h}, confidence=${result.confidence ? result.confidence.toFixed(4) : 'n/a'}, margin=${result.margin ? result.margin.toFixed(4) : 'n/a'}, ${scoresStr}, thresh=${result.threshold}${result.adaptive ? '(adapt)' : ''})`);
         });
 
         // Scan remaining deck from right panel
         console.log('--- Right panel remaining deck scan ---');
-        config.deckCounts.forEach((dc, idx) => {
+        activeConfig.deckCounts.forEach((dc, idx) => {
             const cropW = dc.width;
             const cropH = dc.height;
             const cropX = dc.x;
@@ -372,8 +370,65 @@ app.whenReady().then(() => {
             const normGrid = grid.map(v => Number((v / darkPixels).toFixed(3)));
             const digit = classifyDigit(w, h, normGrid);
             console.log(`${dc.label}: Detected Digit ${digit} (w=${w}, h=${h}, darkPixels=${darkPixels})`);
+            const bp = parseInt(dc.label);
+            if (!isNaN(bp) && bp >= 1 && bp <= 5) {
+                remainingDeck[bp] = digit;
+            }
+
         });
+
+        // Build solver deck
+        const hand = scannedSlots.filter(v => v !== null);
+        const handCounts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+        hand.forEach(v => handCounts[v]++);
+        const solverDeck = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+        for (let bp = 1; bp <= 5; bp++) {
+            solverDeck[bp] = (remainingDeck[bp] || 0) + (handCounts[bp] || 0);
+        }
+
+        console.log('--- Running Solver for this scanned state ---');
+        const effectiveAttempts = isFreeTrial ? 3 : (solveAttempts || 3);
+        const effectiveAbandons = isFreeTrial ? 3 : solveAbandons;
+        const effectiveDoubles = isFreeTrial ? 2 : solveDoubles;
+
+        const solver = new SwordmancySolver(solverDeck, 4);
+        const advice = solver.getBestAction(effectiveAttempts, effectiveAbandons, effectiveDoubles, hand, isDoubled);
+        console.log(`Advice Action: ${advice.action}, EV: ${advice.ev.toFixed(1)}`);
+        console.log(`EV Stop: ${advice.details.evStop !== null ? advice.details.evStop.toFixed(1) : 'null'}`);
+        console.log(`EV Draw: ${advice.details.evDraw !== null ? advice.details.evDraw.toFixed(1) : 'null'}`);
+        console.log(`EV Abandon: ${advice.details.evAbandon !== null ? advice.details.evAbandon.toFixed(1) : 'null'}`);
+        const sum = hand.reduce((acc, val) => acc + val, 0);
+        const label = sum < 10 ? '>10' : '>21';
+        console.log(`Overflow Prob (${label}): ${(advice.details.overflowProb * 100).toFixed(1)}%`);
+        console.log(`Prob 10 (overall): ${(advice.details.prob10 * 100).toFixed(1)}%`);
+        console.log(`Prob 9-10 (overall): ${(advice.details.prob9Plus * 100).toFixed(1)}%`);
+
+
+
+
+        // Verify result
+        const expectedStr = JSON.stringify(testCase.expected);
+        const actualStr = JSON.stringify(scannedSlots);
+        console.log(`Expected: ${expectedStr}`);
+        console.log(`Actual:   ${actualStr}`);
+        
+        if (expectedStr === actualStr) {
+            console.log(`RESULT: PASS`);
+        } else {
+            console.log(`RESULT: FAIL (mismatch)`);
+            totalFailed++;
+        }
     });
 
-    app.quit();
+    console.log(`\n=================== TEST RUNNER SUMMARY ===================`);
+    console.log(`Total test cases: ${testCases.length}`);
+    console.log(`Failed test cases: ${totalFailed}`);
+    
+    if (totalFailed > 0) {
+        console.log('--- TEST FAILED ---');
+        app.exit(1);
+    } else {
+        console.log('--- TEST PASSED ---');
+        app.exit(0);
+    }
 });

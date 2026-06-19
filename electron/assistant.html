@@ -26,6 +26,11 @@
         <div class="header-info" style="display: flex; align-items: center;">
             <!-- Window controls -->
             <div class="window-controls" style="margin-left: 0; display: flex; gap: 0.25rem;">
+                <!-- Load File Button (Folder Icon) in Titlebar -->
+                <button class="win-control-btn" id="lnk-select-file" title="Chọn ảnh quét thủ công" style="color: var(--color-gold); background: rgba(245, 158, 11, 0.1); -webkit-app-region: no-drag;">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+                </button>
+                <input type="file" id="file-input" accept="image/*" style="display: none;">
                 <!-- Force Scan Button (Camera Icon) in Titlebar -->
                 <button class="win-control-btn" id="win-btn-scan" title="Ép quét ngay (F5)" style="color: var(--color-gold); background: rgba(245, 158, 11, 0.1);">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
@@ -357,6 +362,7 @@
     <!-- Load scripts -->
     <script src="../solver.js"></script>
     <script src="./config.js"></script>
+    <script src="./ocr.js"></script>
     <script src="./assistant.js"></script>
 </body>
 </html>

@@ -2,6 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
     requestScreenshot: () => ipcRenderer.send('request-screenshot'),
+    selectFile: () => ipcRenderer.invoke('select-file'),
     onScreenshotCaptured: (callback) => {
         ipcRenderer.on('screenshot-captured', (event, data) => callback(data));
     },

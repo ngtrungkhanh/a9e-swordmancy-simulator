@@ -1,4 +1,4 @@
-const { app, BrowserWindow, shell, globalShortcut, ipcMain, desktopCapturer, screen } = require('electron');
+const { app, BrowserWindow, shell, globalShortcut, ipcMain, desktopCapturer, screen, dialog } = require('electron');
 const fs = require('fs');
 const path = require('path');
 
@@ -11,6 +11,7 @@ let logFile = null;
 let win = null;
 let isExpanded = false;
 let currentMode = 'normal';
+let uiScale = 1.0;
 
 function log(message) {
     try {
@@ -34,6 +35,25 @@ process.on('unhandledRejection', (error) => {
 async function captureAndSendScreenshot() {
     try {
         if (!win || win.isDestroyed()) return;
+        
+        // Support mocking screenshots for offline/automated testing
+        const mockEnv = process.env.MOCK_SCREENSHOT;
+        if (mockEnv) {
+            const mockPath = path.isAbsolute(mockEnv) ? mockEnv : path.join(app.getAppPath(), mockEnv);
+            if (fs.existsSync(mockPath)) {
+                log(`MOCK SCREENSHOT ACTIVE: Loading from ${mockPath}`);
+                const nativeImg = nativeImage.createFromPath(mockPath);
+                if (!nativeImg.isEmpty()) {
+                    const dataUrl = nativeImg.toDataURL();
+                    win.webContents.send('screenshot-captured', dataUrl);
+                    return;
+                } else {
+                    log(`MOCK SCREENSHOT: nativeImage loaded empty from ${mockPath}`);
+                }
+            } else {
+                log(`MOCK SCREENSHOT: File not found at ${mockPath}`);
+            }
+        }
         
         log('Starting window/screen capture...');
         
@@ -166,12 +186,31 @@ function createWindow() {
     log(`createWindow packaged=${app.isPackaged} dirname=${__dirname}`);
 
     const savedSize = loadWindowSize();
+    let initialWidth = savedSize.width;
+    let initialHeight = savedSize.height;
+    
+    // Scale default dimensions if first run or unmodified
+    const isDefaultSize = (savedSize.width === 1280 && savedSize.height === 820);
+    if (isDefaultSize || !fs.existsSync(sizeFilePath)) {
+        initialWidth = Math.round(1280 * uiScale);
+        initialHeight = Math.round(820 * uiScale);
+    }
+    
+    // Safety cap to prevent window exceeding screen dimensions
+    try {
+        const primaryDisplay = screen.getPrimaryDisplay();
+        const { width: scrW, height: scrH } = primaryDisplay.workAreaSize;
+        if (initialWidth > scrW) initialWidth = Math.round(scrW * 0.9);
+        if (initialHeight > scrH) initialHeight = Math.round(scrH * 0.9);
+    } catch (e) {
+        log(`Failed to cap window size against display workArea: ${e.message}`);
+    }
 
     win = new BrowserWindow({
-        width: savedSize.width,
-        height: savedSize.height,
-        minWidth: 1024,
-        minHeight: 700,
+        width: initialWidth,
+        height: initialHeight,
+        minWidth: Math.round(1024 * uiScale),
+        minHeight: Math.round(700 * uiScale),
         title: 'Swordmancy Live Assistant',
         transparent: true,
         frame: false,
@@ -226,6 +265,19 @@ function createWindow() {
 app.whenReady().then(() => {
     log('app ready');
     
+    // Calculate UI scale based on primary display width (standard is 2560)
+    try {
+        const primaryDisplay = screen.getPrimaryDisplay();
+        const scrWidth = primaryDisplay.bounds.width;
+        if (scrWidth < 2560) {
+            uiScale = scrWidth / 2560;
+            if (uiScale < 0.75) uiScale = 0.75;
+        }
+        log(`Main process: calculated uiScale = ${uiScale} (screen width: ${scrWidth})`);
+    } catch (err) {
+        log(`Failed to get primary display for scaling: ${err.message}`);
+    }
+    
     // Register permission handlers to allow WebRTC getUserMedia for desktop capturing
     const { session } = require('electron');
     session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
@@ -270,6 +322,37 @@ app.whenReady().then(() => {
         captureAndSendScreenshot();
     });
 
+    ipcMain.handle('select-file', async () => {
+        log('select-file IPC invoked.');
+        try {
+            const result = await dialog.showOpenDialog(win, {
+                title: 'Chọn ảnh chụp màn hình game',
+                properties: ['openFile'],
+                filters: [
+                    { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp'] }
+                ]
+            });
+            if (result.canceled || result.filePaths.length === 0) {
+                log('File dialog canceled by user.');
+                return null;
+            }
+            const filePath = result.filePaths[0];
+            log(`Selected file: ${filePath}`);
+            const buffer = fs.readFileSync(filePath);
+            const ext = path.extname(filePath).toLowerCase().replace('.', '');
+            let mimeType = 'image/png';
+            if (ext === 'jpg' || ext === 'jpeg') mimeType = 'image/jpeg';
+            else if (ext === 'gif') mimeType = 'image/gif';
+            else if (ext === 'webp') mimeType = 'image/webp';
+            else if (ext === 'bmp') mimeType = 'image/bmp';
+            
+            return `data:${mimeType};base64,${buffer.toString('base64')}`;
+        } catch (err) {
+            log(`Error in select-file handler: ${err.stack || err.message}`);
+            return null;
+        }
+    });
+
     ipcMain.on('log-from-renderer', (event, msg) => {
         log(`[Renderer] ${msg}`);
     });
@@ -279,19 +362,32 @@ app.whenReady().then(() => {
         currentMode = mode;
         if (mode === 'overlay') {
             win.setResizable(true);
-            win.setMinimumSize(400, 150);
-            win.setSize(640, 220);
+            const minW = Math.round(400 * uiScale);
+            const minH = Math.round(150 * uiScale);
+            win.setMinimumSize(minW, minH);
+            const targetW = Math.round(640 * uiScale);
+            const targetH = Math.round(220 * uiScale);
+            win.setSize(targetW, targetH);
             win.setAlwaysOnTop(true, 'screen-saver');
             win.setFocusable(false); // Disable focus to prevent stealing focus from game!
-            log('IPC: Switched window to Overlay Mode (640x220, AlwaysOnTop, focusable=false)');
+            log(`IPC: Switched window to Overlay Mode (${targetW}x${targetH}, AlwaysOnTop, focusable=false)`);
         } else {
             win.setResizable(true);
-            win.setMinimumSize(1024, 700);
+            const minW = Math.round(1024 * uiScale);
+            const minH = Math.round(700 * uiScale);
+            win.setMinimumSize(minW, minH);
             const savedSize = loadWindowSize();
-            win.setSize(savedSize.width, savedSize.height);
+            let targetW = savedSize.width;
+            let targetH = savedSize.height;
+            // If the saved size is default size and hasn't been changed, scale it
+            if (savedSize.width === 1280 && savedSize.height === 820) {
+                targetW = Math.round(1280 * uiScale);
+                targetH = Math.round(820 * uiScale);
+            }
+            win.setSize(targetW, targetH);
             win.setAlwaysOnTop(false);
             win.setFocusable(true); // Re-enable focus for normal mode!
-            log(`IPC: Switched window to Normal Mode (${savedSize.width}x${savedSize.height}, focusable=true)`);
+            log(`IPC: Switched window to Normal Mode (${targetW}x${targetH}, focusable=true)`);
         }
     });
 

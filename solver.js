@@ -146,6 +146,206 @@ class SwordmancySolver {
     }
 
     /**
+     * Calculates the probability of ending the current hand with a target score
+     * under the optimal policy.
+     * @param {Array<number>} targetScores - e.g. [10] or [9, 10]
+     * @param {number} a - attempts
+     * @param {number} f - abandons
+     * @param {number} d - doubles
+     * @param {Array<number>} hand - current hand
+     * @param {boolean} doubled - doubling active
+     * @returns {number} probability (0 to 1)
+     */
+    solveProbability(targetScores, a, f, d, hand, doubled) {
+        if (a <= 0) return 0;
+
+        const { score } = this.getHandScore(hand);
+        const handKey = this.getHandKey(hand);
+        const stateKey = `prob:${targetScores.join(',')}:${a},${f},${d},${handKey},${doubled ? 1 : 0}`;
+
+        if (stateKey in this.memo) {
+            return this.memo[stateKey];
+        }
+
+        const remaining = this.getRemainingDeck(hand);
+        const totalRemaining = Object.values(remaining).reduce((acc, val) => acc + val, 0);
+        const canDraw = hand.length < 5 && totalRemaining > 0;
+
+        // Calculate EVs of actions to determine optimal action
+        let evStop = -Infinity;
+        if (hand.length > 0) {
+            const reward = this.rewards[score] || 0;
+            evStop = reward * (doubled ? 2 : 1) + this.solve(a - 1, f, d, [], false);
+        }
+
+        let evAbandon = -Infinity;
+        if (hand.length > 0 && f > 0) {
+            const refundedD = d + (doubled ? 1 : 0);
+            evAbandon = this.solve(a, f - 1, refundedD, [], false);
+        }
+
+        let evDraw = -Infinity;
+        if (canDraw) {
+            let sumDrawEV = 0;
+            for (let v = 1; v <= 5; v++) {
+                const count = remaining[v] || 0;
+                if (count > 0) {
+                    const prob = count / totalRemaining;
+                    sumDrawEV += prob * this.solve(a, f, d, [...hand, v], doubled);
+                }
+            }
+            evDraw = sumDrawEV;
+        }
+
+        let evDouble = -Infinity;
+        if (hand.length === 2 && !doubled && d > 0) {
+            evDouble = this.solve(a, f, d - 1, hand, true);
+        }
+
+        // Determine optimal action (prefer less risky on ties, same as getBestAction)
+        const actionCandidates = [
+            { action: 'Stop', ev: evStop },
+            { action: 'Abandon', ev: evAbandon },
+            { action: 'Double', ev: evDouble },
+            { action: 'Draw', ev: evDraw }
+        ];
+        const bestCandidate = actionCandidates.reduce((best, candidate) => {
+            if (candidate.ev === -Infinity) return best;
+            if (!best) return candidate;
+            return candidate.ev > best.ev + 0.000001 ? candidate : best;
+        }, null);
+
+        const bestAction = bestCandidate ? bestCandidate.action : 'None';
+
+        let prob = 0;
+        if (bestAction === 'Stop') {
+            prob = targetScores.includes(score) ? 1 : 0;
+        } else if (bestAction === 'Abandon') {
+            prob = 0; // Hand discarded
+        } else if (bestAction === 'Double') {
+            prob = this.solveProbability(targetScores, a, f, d - 1, hand, true);
+        } else if (bestAction === 'Draw') {
+            if (totalRemaining > 0) {
+                let sumProb = 0;
+                for (let v = 1; v <= 5; v++) {
+                    const count = remaining[v] || 0;
+                    if (count > 0) {
+                        const nextHand = [...hand, v];
+                        sumProb += (count / totalRemaining) * this.solveProbability(targetScores, a, f, d, nextHand, doubled);
+                    }
+                }
+                prob = sumProb;
+            }
+        }
+
+        this.memo[stateKey] = prob;
+        return prob;
+    }
+
+    /**
+     * Recursive helper for Draw-to-Target probability.
+     * Player draws cards until they hit a target score, reach 5 cards, or exceed 21.
+     */
+    solveDrawToTargetProbability(targetScores, hand) {
+        const currentSum = hand.reduce((acc, val) => acc + val, 0);
+        const score = currentSum % 11;
+        if (targetScores.includes(score)) return 1;
+        if (hand.length === 5) return 0;
+
+
+        const handKey = this.getHandKey(hand);
+        const stateKey = `d2t:${targetScores.join(',')}:${handKey}`;
+        if (stateKey in this.memo) return this.memo[stateKey];
+
+        const remaining = this.getRemainingDeck(hand);
+        const totalRemaining = Object.values(remaining).reduce((acc, val) => acc + val, 0);
+        if (totalRemaining === 0) return 0;
+
+        let sumProb = 0;
+        for (let v = 1; v <= 5; v++) {
+            const count = remaining[v] || 0;
+            if (count > 0) {
+                sumProb += (count / totalRemaining) * this.solveDrawToTargetProbability(targetScores, [...hand, v]);
+            }
+        }
+
+        this.memo[stateKey] = sumProb;
+        return sumProb;
+    }
+
+    /**
+     * Recursive helper for Draw-to-Target overflow probability.
+     * Player draws cards until they hit target, exceed threshold, or reach 5 cards.
+     */
+    solveDrawToTargetOverflowProbability(threshold, targetScores, hand) {
+        const currentSum = hand.reduce((acc, val) => acc + val, 0);
+        if (currentSum > threshold) return 1;
+
+        const score = currentSum % 11;
+        if (targetScores.includes(score)) return 0; // stopped safely
+        if (hand.length === 5) return 0;
+
+        const handKey = this.getHandKey(hand);
+        const stateKey = `d2tover:${threshold}:${targetScores.join(',')}:${handKey}`;
+        if (stateKey in this.memo) return this.memo[stateKey];
+
+        const remaining = this.getRemainingDeck(hand);
+        const totalRemaining = Object.values(remaining).reduce((acc, val) => acc + val, 0);
+        if (totalRemaining === 0) return 0;
+
+        let sumProb = 0;
+        for (let v = 1; v <= 5; v++) {
+            const count = remaining[v] || 0;
+            if (count > 0) {
+                sumProb += (count / totalRemaining) * this.solveDrawToTargetOverflowProbability(threshold, targetScores, [...hand, v]);
+            }
+        }
+
+        this.memo[stateKey] = sumProb;
+        return sumProb;
+    }
+
+    getDrawToTargetProbability(targetScores, hand) {
+        if (hand.length >= 5) {
+            const score = hand.reduce((acc, val) => acc + val, 0) % 11;
+            return targetScores.includes(score) ? 1 : 0;
+        }
+
+        const remaining = this.getRemainingDeck(hand);
+        const totalRemaining = Object.values(remaining).reduce((acc, val) => acc + val, 0);
+        if (totalRemaining === 0) return 0;
+
+        let sumProb = 0;
+        for (let v = 1; v <= 5; v++) {
+            const count = remaining[v] || 0;
+            if (count > 0) {
+                sumProb += (count / totalRemaining) * this.solveDrawToTargetProbability(targetScores, [...hand, v]);
+            }
+        }
+        return sumProb;
+    }
+
+    getDrawToTargetOverflowProbability(threshold, targetScores, hand) {
+        if (hand.length >= 5) {
+            const currentSum = hand.reduce((acc, val) => acc + val, 0);
+            return currentSum > threshold ? 1 : 0;
+        }
+
+        const remaining = this.getRemainingDeck(hand);
+        const totalRemaining = Object.values(remaining).reduce((acc, val) => acc + val, 0);
+        if (totalRemaining === 0) return 0;
+
+        let sumProb = 0;
+        for (let v = 1; v <= 5; v++) {
+            const count = remaining[v] || 0;
+            if (count > 0) {
+                sumProb += (count / totalRemaining) * this.solveDrawToTargetOverflowProbability(threshold, targetScores, [...hand, v]);
+            }
+        }
+        return sumProb;
+    }
+
+    /**
      * Gets the best action and detailed EVs for the current state
      * @param {number} a - attempts left
      * @param {number} f - free abandons left
@@ -224,38 +424,13 @@ class SwordmancySolver {
             }
         }
 
-        // Calculate overflow probability (if currentSum + v > 21)
-        let overflowProb = 0;
+        // Calculate overflow probability and target probabilities under Draw-to-Target policy
         const currentSum = hand.reduce((acc, val) => acc + val, 0);
-        if (totalRemaining > 0) {
-            let overflowCards = 0;
-            for (let v = 1; v <= 5; v++) {
-                if (currentSum + v > 21) {
-                    overflowCards += remaining[v] || 0;
-                }
-            }
-            overflowProb = overflowCards / totalRemaining;
-        }
-
-        // Calculate probability of getting exactly 10 and 9-10 (score 9 or 10)
-        let prob10 = 0;
-        let prob9Plus = 0;
-        if (totalRemaining > 0) {
-            let cardsFor10 = 0;
-            let cardsFor9Plus = 0;
-            for (let v = 1; v <= 5; v++) {
-                const nextScore = (score + v) % 11;
-                const count = remaining[v] || 0;
-                if (nextScore === 10) {
-                    cardsFor10 += count;
-                }
-                if (nextScore === 9 || nextScore === 10) {
-                    cardsFor9Plus += count;
-                }
-            }
-            prob10 = cardsFor10 / totalRemaining;
-            prob9Plus = cardsFor9Plus / totalRemaining;
-        }
+        const overflowProb = currentSum < 10 
+            ? this.getDrawToTargetOverflowProbability(10, [9, 10], hand) 
+            : this.getDrawToTargetOverflowProbability(21, [9, 10], hand);
+        const prob10 = this.getDrawToTargetProbability([10], hand);
+        const prob9Plus = this.getDrawToTargetProbability([9, 10], hand);
 
         return {
             action: bestAction,
