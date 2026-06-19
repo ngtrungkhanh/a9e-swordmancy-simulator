@@ -369,8 +369,8 @@ app.whenReady().then(() => {
             const targetH = Math.round(220 * uiScale);
             win.setSize(targetW, targetH);
             win.setAlwaysOnTop(true, 'screen-saver');
-            win.setFocusable(false); // Disable focus to prevent stealing focus from game!
-            log(`IPC: Switched window to Overlay Mode (${targetW}x${targetH}, AlwaysOnTop, focusable=false)`);
+            win.setFocusable(true); // Keep HUD controls clickable when the user intentionally interacts with it.
+            log(`IPC: Switched window to Overlay Mode (${targetW}x${targetH}, AlwaysOnTop, focusable=true)`);
         } else {
             win.setResizable(true);
             const minW = Math.round(1024 * uiScale);

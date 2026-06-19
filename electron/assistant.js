@@ -51,6 +51,7 @@ let lastScannedHand = [];
 let lastScannedSlots = Array(5).fill(null);
 let accumulatedBills = 0;
 let scanStarted = false;
+let currentMode = 'REWARDED';
 let uiScale = 1.0;
 const scrWidth = window.screen.width;
 if (scrWidth < 2560) {
@@ -58,49 +59,22 @@ if (scrWidth < 2560) {
     if (uiScale < 0.75) uiScale = 0.75;
 }
 
+// Stateful Round Tracking
+let currentRoundState = {
+    isActive: false,              // Khởi tạo ván đấu đã hoạt động hay chưa
+    estimatedStartingDeck: null,  // Bộ bài xuất phát tính toán được {1:x, 2:x, 3:x, 4:x, 5:x}
+    matchedPreset: 'none',        // Tên preset khớp được ('1'-'7', 'custom', hoặc 'none')
+    isHighTrust: false,           // True nếu bộ bài xuất phát khớp chính xác với một preset mẫu
+    lastTotalRemaining: 0,        // Tổng số bài còn lại ở lượt quét trước
+    lastAttempts: 3,
+    lastFreeAbandons: 3,
+    lastHand: []
+};
+
 // Debug switch: true = ignore deck-diff/reconcile and display hand from slot OCR only.
-const DEBUG_SLOT_OCR_ONLY = true;
+const DEBUG_SLOT_OCR_ONLY = false;
 
-// Digit classifier function (3x3 grid density)
-function classifyDigit(w, h, normGrid) {
-    if (w < 13) return 1;
 
-    // 7: grid[3] === 0 && grid[8] === 0
-    if (normGrid[3] < 0.02 && normGrid[8] < 0.02) {
-        return 7;
-    }
-
-    // 6: grid[2] < 0.02 && grid[3] > 0.15
-    if (normGrid[2] < 0.02 && normGrid[3] > 0.15) {
-        return 6;
-    }
-
-    // 3 or 2: grid[3] < 0.02
-    if (normGrid[3] < 0.02) {
-        if (normGrid[6] > normGrid[8]) {
-            return 2;
-        } else {
-            return 3;
-        }
-    }
-
-    // 5: grid[8] > 0.10 && grid[3] > 0.08
-    if (normGrid[8] > 0.10 && normGrid[3] > 0.08) {
-        return 5;
-    }
-
-    // 4: top-center (grid[1]) is small, top-left and top-right are present
-    if (normGrid[1] < 0.05 && normGrid[0] > 0.05 && normGrid[2] > 0.05) {
-        return 4;
-    }
-
-    // 0: middle hole
-    if (normGrid[4] < 0.08) {
-        return 0;
-    }
-
-    return 8;
-}
 
 // Log helper to send logs back to Electron main process
 function log(msg) {
@@ -150,18 +124,31 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Load saved settings if any
-    const savedAttempts = localStorage.getItem('attemptsLeft');
-    if (savedAttempts !== null) {
-        attemptsLeft = parseInt(savedAttempts);
+    const savedMode = localStorage.getItem('currentMode');
+    if (savedMode !== null) {
+        currentMode = savedMode;
     }
-    const savedAbandons = localStorage.getItem('freeAbandonsLeft');
-    if (savedAbandons !== null) {
-        freeAbandonsLeft = parseInt(savedAbandons);
+    const chkFreeTrial = document.getElementById('chk-free-trial');
+    if (chkFreeTrial) {
+        chkFreeTrial.checked = (currentMode === 'FREE_TRIAL');
     }
-    const savedDoubles = localStorage.getItem('doublesLeft');
-    if (savedDoubles !== null) {
-        doublesLeft = parseInt(savedDoubles);
+
+    if (currentMode === 'REWARDED') {
+        const att = localStorage.getItem('rewardedAttemptsLeft') || localStorage.getItem('attemptsLeft');
+        attemptsLeft = att !== null ? parseInt(att) : 3;
+        const ab = localStorage.getItem('rewardedFreeAbandonsLeft') || localStorage.getItem('freeAbandonsLeft');
+        freeAbandonsLeft = ab !== null ? parseInt(ab) : 3;
+        const dbl = localStorage.getItem('rewardedDoublesLeft') || localStorage.getItem('doublesLeft');
+        doublesLeft = dbl !== null ? parseInt(dbl) : 2;
+    } else {
+        const att = localStorage.getItem('freeTrialAttemptsLeft') || localStorage.getItem('attemptsLeft');
+        attemptsLeft = att !== null ? parseInt(att) : 1;
+        const ab = localStorage.getItem('freeTrialFreeAbandonsLeft') || localStorage.getItem('freeAbandonsLeft');
+        freeAbandonsLeft = ab !== null ? parseInt(ab) : 0;
+        const dbl = localStorage.getItem('freeTrialDoublesLeft') || localStorage.getItem('doublesLeft');
+        doublesLeft = dbl !== null ? parseInt(dbl) : 0;
     }
+
     const savedAccumulated = localStorage.getItem('accumulatedBills');
     if (savedAccumulated !== null) {
         accumulatedBills = parseInt(savedAccumulated);
@@ -418,6 +405,7 @@ function setupEventListeners() {
     document.getElementById('chk-free-trial').onchange = (e) => {
         const isFree = e.target.checked;
         log(`Manual Free Trial checkbox changed: ${isFree}`);
+        switchMode(isFree ? 'FREE_TRIAL' : 'REWARDED');
         if (isFree && lastScannedSlots.every(card => card === null)) {
             attemptsLeft = 1;
             freeAbandonsLeft = 0;
@@ -425,6 +413,9 @@ function setupEventListeners() {
             localStorage.setItem('attemptsLeft', 1);
             localStorage.setItem('freeAbandonsLeft', 0);
             localStorage.setItem('doublesLeft', 0);
+            localStorage.setItem('freeTrialAttemptsLeft', 1);
+            localStorage.setItem('freeTrialFreeAbandonsLeft', 0);
+            localStorage.setItem('freeTrialDoublesLeft', 0);
             syncStepperUI();
         }
         if (lastScannedRemaining) {
@@ -445,6 +436,14 @@ function setupEventListeners() {
         localStorage.setItem('freeAbandonsLeft', freeAbandonsLeft);
         localStorage.setItem('doublesLeft', doublesLeft);
         localStorage.setItem('accumulatedBills', accumulatedBills);
+        
+        // Reset mode-specific values
+        localStorage.setItem('rewardedAttemptsLeft', attemptsLeft);
+        localStorage.setItem('rewardedFreeAbandonsLeft', freeAbandonsLeft);
+        localStorage.setItem('rewardedDoublesLeft', doublesLeft);
+        localStorage.setItem('freeTrialAttemptsLeft', 1);
+        localStorage.setItem('freeTrialFreeAbandonsLeft', 0);
+        localStorage.setItem('freeTrialDoublesLeft', 0);
         
         syncStepperUI();
         updateAccumulatedBillsUI();
@@ -618,19 +617,80 @@ function updateAccumulatedBillsUI() {
     if (hudEl) hudEl.innerText = formatted;
 }
 
+function switchMode(newMode) {
+    if (newMode === currentMode) return;
+    
+    // Save current values to old mode's keys
+    if (currentMode === 'REWARDED') {
+        localStorage.setItem('rewardedAttemptsLeft', attemptsLeft);
+        localStorage.setItem('rewardedFreeAbandonsLeft', freeAbandonsLeft);
+        localStorage.setItem('rewardedDoublesLeft', doublesLeft);
+    } else {
+        localStorage.setItem('freeTrialAttemptsLeft', attemptsLeft);
+        localStorage.setItem('freeTrialFreeAbandonsLeft', freeAbandonsLeft);
+        localStorage.setItem('freeTrialDoublesLeft', doublesLeft);
+    }
+    
+    // Load values for new mode
+    currentMode = newMode;
+    if (newMode === 'REWARDED') {
+        const att = localStorage.getItem('rewardedAttemptsLeft');
+        attemptsLeft = att !== null ? parseInt(att) : 3;
+        const ab = localStorage.getItem('rewardedFreeAbandonsLeft');
+        freeAbandonsLeft = ab !== null ? parseInt(ab) : 3;
+        const dbl = localStorage.getItem('rewardedDoublesLeft');
+        doublesLeft = dbl !== null ? parseInt(dbl) : 2;
+    } else {
+        const att = localStorage.getItem('freeTrialAttemptsLeft');
+        attemptsLeft = att !== null ? parseInt(att) : 1;
+        const ab = localStorage.getItem('freeTrialFreeAbandonsLeft');
+        freeAbandonsLeft = ab !== null ? parseInt(ab) : 0;
+        const dbl = localStorage.getItem('freeTrialDoublesLeft');
+        doublesLeft = dbl !== null ? parseInt(dbl) : 0;
+    }
+    
+    // Save current active keys for compatibility
+    localStorage.setItem('attemptsLeft', attemptsLeft);
+    localStorage.setItem('freeAbandonsLeft', freeAbandonsLeft);
+    localStorage.setItem('doublesLeft', doublesLeft);
+    localStorage.setItem('currentMode', currentMode);
+    
+    const chk = document.getElementById('chk-free-trial');
+    if (chk) {
+        chk.checked = (currentMode === 'FREE_TRIAL');
+    }
+    syncStepperUI();
+    log(`Switched mode to ${newMode}. Attempts: ${attemptsLeft}, Abandons: ${freeAbandonsLeft}, Doubles: ${doublesLeft}`);
+}
+
 function updateStepper(type, delta) {
     if (type === 'attempts') {
         attemptsLeft = Math.max(0, Math.min(3, attemptsLeft + delta));
         localStorage.setItem('attemptsLeft', attemptsLeft);
+        if (currentMode === 'REWARDED') {
+            localStorage.setItem('rewardedAttemptsLeft', attemptsLeft);
+        } else {
+            localStorage.setItem('freeTrialAttemptsLeft', attemptsLeft);
+        }
         if (attemptsLeft === 0) {
-            document.getElementById('chk-free-trial').checked = true;
+            switchMode('FREE_TRIAL');
         }
     } else if (type === 'abandons') {
         freeAbandonsLeft = Math.max(0, Math.min(3, freeAbandonsLeft + delta));
         localStorage.setItem('freeAbandonsLeft', freeAbandonsLeft);
+        if (currentMode === 'REWARDED') {
+            localStorage.setItem('rewardedFreeAbandonsLeft', freeAbandonsLeft);
+        } else {
+            localStorage.setItem('freeTrialFreeAbandonsLeft', freeAbandonsLeft);
+        }
     } else if (type === 'doubles') {
         doublesLeft = Math.max(0, Math.min(2, doublesLeft + delta));
         localStorage.setItem('doublesLeft', doublesLeft);
+        if (currentMode === 'REWARDED') {
+            localStorage.setItem('rewardedDoublesLeft', doublesLeft);
+        } else {
+            localStorage.setItem('freeTrialDoublesLeft', doublesLeft);
+        }
     }
     
     syncStepperUI();
@@ -660,110 +720,9 @@ function getCropBuffer(ctx, x, y, w, h) {
 function scanDigitInRegion(ctx, xStart, yStart, xEnd, yEnd) {
     const w = xEnd - xStart;
     const h = yEnd - yStart;
-    const pixels = ctx.getImageData(xStart, yStart, w, h).data;
-    
-    let visited = Array(w * h).fill(false);
-    let digitCluster = null;
-    
-    function isDark(cx, cy) {
-        const idx = (cy * w + cx) * 4;
-        const val = (pixels[idx] + pixels[idx+1] + pixels[idx+2]) / 3;
-        return val < 110;
-    }
-    
-    for (let y = 0; y < h; y++) {
-        for (let x = 0; x < w; x++) {
-            const flatIdx = y * w + x;
-            if (visited[flatIdx]) continue;
-            
-            if (isDark(x, y)) {
-                let queue = [{x, y}];
-                visited[flatIdx] = true;
-                let minCX = x, maxCX = x, minCY = y, maxCY = y;
-                let clusterPixels = [];
-                
-                while (queue.length > 0) {
-                    const curr = queue.shift();
-                    clusterPixels.push(curr);
-                    
-                    if (curr.x < minCX) minCX = curr.x;
-                    if (curr.x > maxCX) maxCX = curr.x;
-                    if (curr.y < minCY) minCY = curr.y;
-                    if (curr.y > maxCY) maxCY = curr.y;
-                    
-                    const neighbors = [
-                        {x: curr.x + 1, y: curr.y},
-                        {x: curr.x - 1, y: curr.y},
-                        {x: curr.x, y: curr.y + 1},
-                        {x: curr.x, y: curr.y - 1}
-                    ];
-                    
-                    neighbors.forEach(n => {
-                        if (n.x >= 0 && n.x < w && n.y >= 0 && n.y < h) {
-                            const nFlatIdx = n.y * w + n.x;
-                            if (!visited[nFlatIdx]) {
-                                visited[nFlatIdx] = true;
-                                if (isDark(n.x, n.y)) {
-                                    queue.push(n);
-                                }
-                            }
-                        }
-                    });
-                }
-                
-                const cw = maxCX - minCX + 1;
-                const ch = maxCY - minCY + 1;
-                if (cw >= 4 && ch >= 10 && cw < 20 && ch < 22) {
-                    digitCluster = { minX: minCX, maxX: maxCX, minY: minCY, maxY: maxCY, cw, ch, pixels: clusterPixels };
-                }
-            } else {
-                visited[flatIdx] = true;
-            }
-        }
-    }
-    
-    if (!digitCluster) return null;
-    
-    // Normalized 3x3 Grid
-    const cw = digitCluster.cw;
-    const ch = digitCluster.ch;
-    const darkPixels = digitCluster.pixels.length;
-    const cellW = cw / 3;
-    const cellH = ch / 3;
-    const grid = Array(9).fill(0);
-    
-    let cropBuffer = Array(ch).fill(0).map(() => Array(cw).fill(0));
-    digitCluster.pixels.forEach(p => {
-        cropBuffer[p.y - digitCluster.minY][p.x - digitCluster.minX] = 1;
-    });
-    
-    for (let cy = 0; cy < ch; cy++) {
-        for (let cx = 0; cx < cw; cx++) {
-            if (cropBuffer[cy][cx] === 1) {
-                const cellX = Math.min(2, Math.floor(cx / cellW));
-                const cellY = Math.min(2, Math.floor(cy / cellH));
-                grid[cellY * 3 + cellX]++;
-            }
-        }
-    }
-    
-    const normGrid = grid.map(v => Number((v / darkPixels).toFixed(3)));
-    return classifyHeaderDigit(cw, ch, normGrid);
-}
-
-function classifyHeaderDigit(w, h, normGrid) {
-    if (w < 6) return 1;
-    if (normGrid[3] < 0.02) {
-        if (normGrid[6] > normGrid[8]) {
-            return 2;
-        } else {
-            return 3;
-        }
-    }
-    if (normGrid[4] < 0.08) {
-        return 0;
-    }
-    return 0;
+    const cropPixels = ctx.getImageData(xStart, yStart, w, h).data;
+    const result = classifySmallUiDigitFromCrop(cropPixels, w, h);
+    return result.digit; // Trả về chữ số nhận diện hoặc null
 }
 
 function processRawScreenshot(width, height, buffer) {
@@ -939,52 +898,8 @@ function analyzeCanvas(ctx, width, height) {
             const cropY = dc.y;
 
             const cropPixels = getCropBuffer(ctx, cropX, cropY, cropW, cropH);
-            let darkPixels = 0;
-            let minX = cropW, maxX = 0, minY = cropH, maxY = 0;
-            const cropBuffer = new Uint8Array(cropW * cropH);
-
-            for (let cy = 0; cy < cropH; cy++) {
-                for (let cx = 0; cx < cropW; cx++) {
-                    const srcIdx = (cy * cropW + cx) * 4;
-                    const r = cropPixels[srcIdx];
-                    const g = cropPixels[srcIdx+1];
-                    const b = cropPixels[srcIdx+2];
-                    const val = (r + g + b) / 3;
-
-                    if (val <= 110) {
-                        darkPixels++;
-                        if (cx < minX) minX = cx;
-                        if (cx > maxX) maxX = cx;
-                        if (cy < minY) minY = cy;
-                        if (cy > maxY) maxY = cy;
-                        cropBuffer[cy * cropW + cx] = 1;
-                    }
-                }
-            }
-
-            if (darkPixels < 30) {
-                remainingDeck[idx+1] = 0;
-                return;
-            }
-
-            const w = maxX - minX + 1;
-            const h = maxY - minY + 1;
-            const cellW = w / 3;
-            const cellH = h / 3;
-            const grid = Array(9).fill(0);
-
-            for (let cy = minY; cy <= maxY; cy++) {
-                for (let cx = minX; cx <= maxX; cx++) {
-                    if (cropBuffer[cy * cropW + cx] === 1) {
-                        const cellX = Math.min(2, Math.floor((cx - minX) / cellW));
-                        const cellY = Math.min(2, Math.floor((cy - minY) / cellH));
-                        grid[cellY * 3 + cellX]++;
-                    }
-                }
-            }
-
-            const normGrid = grid.map(v => Number((v / darkPixels).toFixed(3)));
-            remainingDeck[idx+1] = classifyDigit(w, h, normGrid);
+            const result = classifySmallUiDigitFromCrop(cropPixels, cropW, cropH);
+            remainingDeck[idx+1] = result.digit !== null ? result.digit : 0;
         });
 
         log(`Scanned Deck: [${Object.values(remainingDeck).join(', ')}]`);
@@ -1028,10 +943,10 @@ function analyzeCanvas(ctx, width, height) {
         const minDarkBr = Math.max(5, Math.round(brConfig.width * brConfig.height * 0.074));
         const isBracketPresent = darkBr > minDarkBr;
 
-        // Determine if Free Trial Mode is active
+        // Determine if Free Trial Mode is active from visual elements
         let isFreeTrial = false;
         const manualFreeTrial = document.getElementById('chk-free-trial').checked;
-        if (manualFreeTrial || attemptsLeft === 0) {
+        if (manualFreeTrial) {
             isFreeTrial = true;
         } else {
             const hasDouble = isDoubleSwitchPresent || isDoubled;
@@ -1039,6 +954,9 @@ function analyzeCanvas(ctx, width, height) {
                 isFreeTrial = true;
             }
         }
+        
+        // Switch state & UI to target mode
+        switchMode(isFreeTrial ? 'FREE_TRIAL' : 'REWARDED');
         log(`Mode detected: ${isFreeTrial ? 'FREE TRIAL' : 'REWARDED'} (DoublePresent=${isDoubleSwitchPresent}, BracketPresent=${isBracketPresent})`);
 
         // If in Free Trial mode and hand is empty, reset to defaults
@@ -1049,6 +967,9 @@ function analyzeCanvas(ctx, width, height) {
             localStorage.setItem('attemptsLeft', attemptsLeft);
             localStorage.setItem('freeAbandonsLeft', freeAbandonsLeft);
             localStorage.setItem('doublesLeft', doublesLeft);
+            localStorage.setItem('freeTrialAttemptsLeft', attemptsLeft);
+            localStorage.setItem('freeTrialFreeAbandonsLeft', freeAbandonsLeft);
+            localStorage.setItem('freeTrialDoublesLeft', doublesLeft);
             syncStepperUI();
             log(`Free Trial round start: Reset steppers to 1 attempt, 0 abandons, 0 doubles.`);
         }
@@ -1061,9 +982,10 @@ function analyzeCanvas(ctx, width, height) {
             if (scannedAttempts !== null && scannedAttempts >= 0 && scannedAttempts <= 3) {
                 attemptsLeft = scannedAttempts;
                 localStorage.setItem('attemptsLeft', attemptsLeft);
+                localStorage.setItem('rewardedAttemptsLeft', attemptsLeft);
                 log(`OCR Detected Attempts remaining: ${attemptsLeft}`);
                 if (attemptsLeft === 0) {
-                    isFreeTrial = true;
+                    switchMode('FREE_TRIAL');
                 }
             }
 
@@ -1074,6 +996,7 @@ function analyzeCanvas(ctx, width, height) {
                 if (scannedDoubles !== null && scannedDoubles >= 0 && scannedDoubles <= 2) {
                     doublesLeft = scannedDoubles;
                     localStorage.setItem('doublesLeft', doublesLeft);
+                    localStorage.setItem('rewardedDoublesLeft', doublesLeft);
                     log(`OCR Detected Doubles remaining: ${doublesLeft}`);
                 }
             }
@@ -1097,6 +1020,9 @@ function analyzeCanvas(ctx, width, height) {
                     localStorage.setItem('attemptsLeft', 1);
                     localStorage.setItem('freeAbandonsLeft', 0);
                     localStorage.setItem('doublesLeft', 0);
+                    localStorage.setItem('freeTrialAttemptsLeft', 1);
+                    localStorage.setItem('freeTrialFreeAbandonsLeft', 0);
+                    localStorage.setItem('freeTrialDoublesLeft', 0);
                     syncStepperUI();
                     log(`Free Trial round reset: Reset steppers to 1 attempt, 0 abandons, 0 doubles.`);
                 } else {
@@ -1106,6 +1032,7 @@ function analyzeCanvas(ctx, width, height) {
                         log(`Attempts did not decrease on deck reset (Prev: ${prevAttempts}, Curr: ${currAttempts}). Counting as an ABANDON.`);
                         freeAbandonsLeft = Math.max(0, freeAbandonsLeft - 1);
                         localStorage.setItem('freeAbandonsLeft', freeAbandonsLeft);
+                        localStorage.setItem('rewardedFreeAbandonsLeft', freeAbandonsLeft);
                         syncStepperUI();
                     } else {
                         log(`Attempts decreased or status unclear (Prev: ${prevAttempts}, Curr: ${currAttempts}). Normal round completion.`);
@@ -1147,15 +1074,146 @@ function analyzeCanvas(ctx, width, height) {
 }
 
 function runSolver(remainingDeck, isDoubled, isFreeTrial, scannedSlots) {
-    const startingDeck = DECK_PRESETS[selectedPreset];
     const activeConfig = window.getActiveConfig();
     const normalizedSlots = normalizeScannedSlots(scannedSlots);
     const scannedHand = compactSlots(normalizedSlots);
     
+    const currSum = Object.values(remainingDeck).reduce((a, b) => a + b, 0);
+    
+    // 1. Detect Round Reset & Reset Triggers
+    let shouldReset = false;
+    
+    if (!currentRoundState.isActive) {
+        shouldReset = true; // Not active yet, initialize
+    } else {
+        // Trigger 1: Attempts decreased
+        if (attemptsLeft < currentRoundState.lastAttempts) {
+            log(`Round Reset Trigger: Attempts decreased from ${currentRoundState.lastAttempts} to ${attemptsLeft}`);
+            shouldReset = true;
+        }
+        // Trigger 2: Free Abandons decreased
+        else if (freeAbandonsLeft < currentRoundState.lastFreeAbandons) {
+            log(`Round Reset Trigger: Free Abandons decreased from ${currentRoundState.lastFreeAbandons} to ${freeAbandonsLeft}`);
+            shouldReset = true;
+        }
+        // Trigger 3: Hand is empty
+        else if (scannedHand.length === 0 && currentRoundState.lastHand.length > 0) {
+            log(`Round Reset Trigger: Hand became empty`);
+            shouldReset = true;
+        }
+        // Trigger 4: Remaining deck sum increased significantly
+        else if (currSum > currentRoundState.lastTotalRemaining + 2) {
+            log(`Round Reset Trigger: Deck count sum increased from ${currentRoundState.lastTotalRemaining} to ${currSum}`);
+            shouldReset = true;
+        }
+        // Trigger 5: Hand mismatch (at least 2 cards changed and not a subset)
+        else if (currentRoundState.lastHand.length > 0 && scannedHand.length > 0) {
+            let isContinuation = true;
+            let lastHandCopy = [...currentRoundState.lastHand];
+            for (const card of lastHandCopy) {
+                const idx = scannedHand.indexOf(card);
+                if (idx === -1) {
+                    isContinuation = false;
+                    break;
+                }
+            }
+            
+            if (!isContinuation) {
+                let mismatchCount = 0;
+                for (let i = 0; i < 5; i++) {
+                    const prevVal = lastScannedSlots ? lastScannedSlots[i] : null;
+                    const newVal = normalizedSlots[i];
+                    if (prevVal !== newVal && prevVal !== null && newVal !== null) {
+                        mismatchCount++;
+                    }
+                }
+                if (mismatchCount >= 2) {
+                    log(`Round Reset Trigger: Hand mismatch detected (mismatch count: ${mismatchCount})`);
+                    shouldReset = true;
+                }
+            }
+        }
+    }
+    
+    if (shouldReset) {
+        log(`Initializing / Resetting round state.`);
+        currentRoundState.isActive = false;
+        currentRoundState.estimatedStartingDeck = null;
+        currentRoundState.matchedPreset = 'none';
+        currentRoundState.isHighTrust = false;
+    }
+    
+    // 2. Dynamic Starting Deck Estimation
+    if (!currentRoundState.isActive && scannedHand.length > 0) {
+        const handCounts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+        scannedHand.forEach(card => {
+            if (card >= 1 && card <= 5) handCounts[card]++;
+        });
+        
+        const estimatedStarting = {};
+        for (let bp = 1; bp <= 5; bp++) {
+            estimatedStarting[bp] = (remainingDeck[bp] || 0) + handCounts[bp];
+        }
+        
+        log(`Dynamically estimated starting deck: ${JSON.stringify(estimatedStarting)}`);
+        
+        let matchedKey = 'none';
+        for (const [key, presetDeck] of Object.entries(DECK_PRESETS)) {
+            if (key === 'custom') continue;
+            let isMatch = true;
+            for (let bp = 1; bp <= 5; bp++) {
+                if (presetDeck[bp] !== estimatedStarting[bp]) {
+                    isMatch = false;
+                    break;
+                }
+            }
+            if (isMatch) {
+                matchedKey = key;
+                break;
+            }
+        }
+        
+        currentRoundState.isActive = true;
+        currentRoundState.lastTotalRemaining = currSum;
+        currentRoundState.lastAttempts = attemptsLeft;
+        currentRoundState.lastFreeAbandons = freeAbandonsLeft;
+        currentRoundState.lastHand = [...scannedHand];
+        
+        if (matchedKey !== 'none') {
+            currentRoundState.estimatedStartingDeck = { ...DECK_PRESETS[matchedKey] };
+            currentRoundState.matchedPreset = matchedKey;
+            currentRoundState.isHighTrust = true;
+            log(`Dynamic Deck Match: Preset ${matchedKey} (High Trust)`);
+            
+            // Auto-update select preset in UI
+            const selectEl = document.getElementById('deck-preset');
+            if (selectEl) {
+                selectEl.value = matchedKey;
+                selectedPreset = matchedKey;
+                localStorage.setItem('selectedPreset', matchedKey);
+            }
+        } else {
+            currentRoundState.estimatedStartingDeck = estimatedStarting;
+            currentRoundState.matchedPreset = 'none';
+            currentRoundState.isHighTrust = false;
+            log(`Dynamic Deck Match: No preset matches. Using raw estimate (Low Trust)`);
+        }
+    } else if (currentRoundState.isActive) {
+        currentRoundState.lastTotalRemaining = currSum;
+        currentRoundState.lastAttempts = attemptsLeft;
+        currentRoundState.lastFreeAbandons = freeAbandonsLeft;
+        currentRoundState.lastHand = [...scannedHand];
+    }
+    
+    // Choose starting deck based on trust
+    const startingDeck = currentRoundState.isHighTrust
+        ? currentRoundState.estimatedStartingDeck
+        : DECK_PRESETS[selectedPreset]; // Fallback to manual selection if not in high trust
+        
     // Calculate cards on hand (deducedHand)
     const deducedHand = [];
     let hasNegativeError = false;
-
+    
     for (let bp = 1; bp <= 5; bp++) {
         const diff = startingDeck[bp] - remainingDeck[bp];
         if (diff < 0) {
@@ -1166,43 +1224,53 @@ function runSolver(remainingDeck, isDoubled, isFreeTrial, scannedSlots) {
             }
         }
     }
-
-    if (hasNegativeError) {
-        log(`Warning: Scanned deck counts exceed preset.`);
-        document.getElementById('suggestion-value').innerText = 'SAI BỘ BÀI GỐC';
-        document.getElementById('suggestion-reason').innerHTML = `LỖI: Số bài quét được lớn hơn preset xuất phát.<br>Hãy chọn đúng <strong>Bộ bài xuất phát</strong> ở cột trái.`;
-        document.getElementById('suggestion-box').className = 'suggestion-box assistant-suggestion abandon-action';
-        
-        // HUD Error
-        document.getElementById('hud-hand-display').innerText = '[ LỖI PRESET ]';
-        document.getElementById('hud-action-val').innerText = 'SAI PRESET';
-        document.getElementById('hud-reward-val').innerText = '0 Bills';
-        log(`Continuing with slot OCR fallback because selected preset is not reliable.`);
+    
+    if (hasNegativeError && currentRoundState.isHighTrust) {
+        log(`Warning: Scanned deck counts exceed auto-detected preset.`);
+        currentRoundState.isHighTrust = false;
+        log(`Degrading to Low Trust due to negative error.`);
     }
-
+    
     lastScannedSlots = normalizedSlots;
-    if (DEBUG_SLOT_OCR_ONLY) {
-        log(`DEBUG_SLOT_OCR_ONLY enabled: ignoring deduced hand for display/reconcile.`);
-    }
     log(`Deduced Hand: [${deducedHand.join(', ')}]`);
-
-    const canUseDeducedHand = !DEBUG_SLOT_OCR_ONLY && !hasNegativeError && (
+    
+    const canUseDeducedHand = !DEBUG_SLOT_OCR_ONLY && currentRoundState.isHighTrust && !hasNegativeError && (
         scannedHand.length === 0 ||
         deducedHand.length >= scannedHand.length
     );
-
-    // Reconcile only when deck-diff is plausible; otherwise trust slot OCR for mid-round scans.
+    
     const hand = canUseDeducedHand
         ? reconcileHandSlots(normalizedSlots, deducedHand)
         : scannedHand;
+        
     const solverDeck = canUseDeducedHand
         ? startingDeck
         : buildEffectiveDeck(remainingDeck, hand);
-
-    log(`Hand Source: ${canUseDeducedHand ? 'slots+deduced' : 'slot-only fallback'}`);
-    log(`Solver Deck Source: ${canUseDeducedHand ? 'selected preset' : 'effective remaining+hand'} [${Object.values(solverDeck).join(', ')}]`);
+        
+    log(`Hand Source: ${canUseDeducedHand ? 'slots+deduced' : 'slot-only fallback (Low Trust)'}`);
+    log(`Solver Deck Source: ${canUseDeducedHand ? 'auto-detected preset' : 'effective remaining+hand'} [${Object.values(solverDeck).join(', ')}]`);
     log(`Reconciled Hand: [${hand.join(', ')}]`);
     lastScannedHand = hand;
+    
+    // Render Preset info in scan-meta if active
+    const scanMetaEl = document.getElementById('scan-meta');
+    if (scanMetaEl) {
+        const scanTime = new Date().toLocaleTimeString();
+        let presetText = "";
+        if (currentRoundState.isActive) {
+            if (currentRoundState.isHighTrust) {
+                presetText = ` | Tự động: Preset ${currentRoundState.matchedPreset} (Tin cậy cao)`;
+            } else {
+                presetText = ` | Tự động: Không xác định (Tin cậy thấp)`;
+            }
+        } else {
+            presetText = ` | Chờ ván mới...`;
+        }
+        const currentMeta = scanMetaEl.innerText;
+        const timeMatch = currentMeta.match(/Quét xong lúc \d+:\d+:\d+/);
+        const timeStr = timeMatch ? timeMatch[0] : `Quét lúc ${scanTime}`;
+        scanMetaEl.innerText = `${timeStr}. Nhân đôi: ${isDoubled ? 'BẬT' : 'TẮT'}${presetText}`;
+    }
 
     // Render Hand
     renderHandCards(hand);
@@ -1210,17 +1278,21 @@ function runSolver(remainingDeck, isDoubled, isFreeTrial, scannedSlots) {
     // Format hand for Overlay HUD
     document.getElementById('hud-hand-display').innerText = `[ ${hand.join(' | ') || '-'} ]`;
 
+    // Auto-detect Free Trial if attempts is 0
+    if (attemptsLeft === 0) {
+        isFreeTrial = true;
+    }
+
+    if (isFreeTrial) {
+        isDoubled = false;
+    }
+
     // Calculate BP sum and score mod 11
     const sum = hand.reduce((acc, val) => acc + val, 0);
     const score = sum % 11;
     document.getElementById('stat-sum').innerText = score;
     document.getElementById('stat-double').innerText = isDoubled ? 'BẬT' : 'TẮT';
     document.getElementById('stat-double').className = isDoubled ? 'stat-num gold-glow' : 'stat-num text-muted';
-
-    // Auto-detect Free Trial if attempts is 0
-    if (attemptsLeft === 0) {
-        isFreeTrial = true;
-    }
 
     // Set parameters based on mode
     let solveAttempts = attemptsLeft;

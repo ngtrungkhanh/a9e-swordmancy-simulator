@@ -47,6 +47,9 @@
 ## 3. Lượt đấu nhận thưởng & Luật bỏ bài (Abandon)
 
 *   Mỗi ngày người chơi có tối đa **3 lượt đấu nhận thưởng (Rewarded Trial attempts)**.
+*   **Logic khấu trừ lượt chơi thực tế**:
+    *   Ngay khi người chơi **rút lá bài đầu tiên**, số lượt nhận thưởng hiển thị trên màn hình sẽ lập tức **giảm đi 1** (ví dụ từ 3 lượt xuống 2 lượt).
+    *   Nếu người chơi chọn **Bỏ bài (Abandon)** khi chưa kết thúc lượt đấu, số lượt nhận thưởng sẽ **được hoàn trả lại** (quay về số lượt cũ, ví dụ từ 2 tăng lên 3), đồng thời khấu trừ vào số lượt Bỏ bài (Reroll) còn lại trong ngày.
 *   Nếu không hài lòng với tay bài, người chơi có thể chọn **Abandon**:
     *   **3 lần đầu tiên** bỏ bài trong ngày là **miễn phí** (không mất lượt đấu hàng ngày).
     *   **Từ lần thứ 4 trở đi**, mỗi lần bỏ bài sẽ tiêu tốn 1 lượt đấu nhận thưởng hàng ngày (và nhận về 0 Wuling Stock Bills cho lượt đó).

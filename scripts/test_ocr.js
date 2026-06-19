@@ -3,49 +3,9 @@ const path = require('path');
 const fs = require('fs');
 
 // Import OCR logic, Solver and Configuration
-const { classifyCardDigitFromCrop } = require('../electron/ocr.js');
+const { classifyCardDigitFromCrop, classifySmallUiDigitFromCrop } = require('../electron/ocr.js');
 const { getActiveConfig } = require('../electron/config.js');
 const { SwordmancySolver } = require('../solver.js');
-
-function classifyDigit(w, h, normGrid) {
-    if (w < 13) return 1;
-
-    // 7: grid[3] === 0 && grid[8] === 0
-    if (normGrid[3] < 0.02 && normGrid[8] < 0.02) {
-        return 7;
-    }
-
-    // 6: grid[2] < 0.02 && grid[3] > 0.15
-    if (normGrid[2] < 0.02 && normGrid[3] > 0.15) {
-        return 6;
-    }
-
-    // 3 or 2: grid[3] < 0.02
-    if (normGrid[3] < 0.02) {
-        if (normGrid[6] > normGrid[8]) {
-            return 2;
-        } else {
-            return 3;
-        }
-    }
-
-    // 5: grid[8] > 0.10 && grid[3] > 0.08
-    if (normGrid[8] > 0.10 && normGrid[3] > 0.08) {
-        return 5;
-    }
-
-    // 4: top-center (grid[1]) is small, top-left and top-right are present
-    if (normGrid[1] < 0.05 && normGrid[0] > 0.05 && normGrid[2] > 0.05) {
-        return 4;
-    }
-
-    // 0: middle hole
-    if (normGrid[4] < 0.08) {
-        return 0;
-    }
-
-    return 8;
-}
 
 function isFaceCardSlot(bitmap, size, cardPos, activeConfig) {
     const rel = activeConfig.cardFaceStripRelative || { xOffset: 0, yOffset: 10, width: 300, height: 50 };
@@ -74,10 +34,12 @@ app.whenReady().then(() => {
     const projectDir = path.join(__dirname, '..');
     
     const testCases = [
-        { file: '1.png', expected: [null, null, null, null, null] },
-        { file: '2.png', expected: [1, 3, null, null, null] },
-        { file: '3.png', expected: [1, 3, 2, 5, 1] },
-        { file: '4.png', expected: [null, null, null, null, null] }
+        { file: '1.png', expected: [null, null, null, null, null], expectedAttempts: 3, expectedDoubles: 2, expectedFreeTrial: false },
+        { file: '2.png', expected: [1, 3, null, null, null], expectedAttempts: 2, expectedDoubles: 2, expectedFreeTrial: false },
+        { file: '3.png', expected: [1, 3, 2, 5, 1], expectedAttempts: 2, expectedDoubles: 2, expectedFreeTrial: false },
+        { file: '4.png', expected: [null, null, null, null, null], expectedAttempts: 1, expectedDoubles: 2, expectedFreeTrial: true },
+        { file: '5.png', expected: [1, 1, 3, 4, 3], expectedAttempts: 2, expectedDoubles: 2, expectedFreeTrial: false },
+        { file: '6.png', expected: [3, 4, null, null, null], expectedAttempts: 2, expectedDoubles: 2, expectedFreeTrial: false }
     ];
 
     let totalFailed = 0;
@@ -163,105 +125,19 @@ app.whenReady().then(() => {
             function testScanDigit(xStart, yStart, xEnd, yEnd) {
                 const w = xEnd - xStart;
                 const h = yEnd - yStart;
-                let visited = Array(w * h).fill(false);
-                let digitCluster = null;
-
-                function isDark(cx, cy) {
-                    const idx = ((yStart + cy) * size.width + (xStart + cx)) * 4;
-                    const val = (bitmap[idx] + bitmap[idx+1] + bitmap[idx+2]) / 3;
-                    return val < 110;
-                }
-
-                for (let y = 0; y < h; y++) {
-                    for (let x = 0; x < w; x++) {
-                        const flatIdx = y * w + x;
-                        if (visited[flatIdx]) continue;
-
-                        if (isDark(x, y)) {
-                            let queue = [{x, y}];
-                            visited[flatIdx] = true;
-                            let minCX = x, maxCX = x, minCY = y, maxCY = y;
-                            let clusterPixels = [];
-
-                            while (queue.length > 0) {
-                                const curr = queue.shift();
-                                clusterPixels.push(curr);
-
-                                if (curr.x < minCX) minCX = curr.x;
-                                if (curr.x > maxCX) maxCX = curr.x;
-                                if (curr.y < minCY) minCY = curr.y;
-                                if (curr.y > maxCY) maxCY = curr.y;
-
-                                const neighbors = [
-                                    {x: curr.x + 1, y: curr.y},
-                                    {x: curr.x - 1, y: curr.y},
-                                    {x: curr.x, y: curr.y + 1},
-                                    {x: curr.x, y: curr.y - 1}
-                                ];
-
-                                neighbors.forEach(n => {
-                                    if (n.x >= 0 && n.x < w && n.y >= 0 && n.y < h) {
-                                        const nFlatIdx = n.y * w + n.x;
-                                        if (!visited[nFlatIdx]) {
-                                            visited[nFlatIdx] = true;
-                                            if (isDark(n.x, n.y)) {
-                                                queue.push(n);
-                                            }
-                                        }
-                                    }
-                                });
-                            }
-
-                            const cw = maxCX - minCX + 1;
-                            const ch = maxCY - minCY + 1;
-                            if (cw >= 4 && ch >= 10 && cw < 20 && ch < 22) {
-                                digitCluster = { minX: minCX, maxX: maxCX, minY: minCY, maxY: maxCY, cw, ch, pixels: clusterPixels };
-                            }
-                        } else {
-                            visited[flatIdx] = true;
-                        }
+                const cropPixels = new Uint8Array(w * h * 4);
+                for (let cy = 0; cy < h; cy++) {
+                    for (let cx = 0; cx < w; cx++) {
+                        const srcIdx = ((yStart + cy) * size.width + (xStart + cx)) * 4;
+                        const destIdx = (cy * w + cx) * 4;
+                        cropPixels[destIdx] = bitmap[srcIdx];
+                        cropPixels[destIdx+1] = bitmap[srcIdx+1];
+                        cropPixels[destIdx+2] = bitmap[srcIdx+2];
+                        cropPixels[destIdx+3] = bitmap[srcIdx+3];
                     }
                 }
-
-                if (!digitCluster) return null;
-
-                const cw = digitCluster.cw;
-                const ch = digitCluster.ch;
-                const darkPixels = digitCluster.pixels.length;
-                const cellW = cw / 3;
-                const cellH = ch / 3;
-                const grid = Array(9).fill(0);
-
-                let cropBuffer = Array(ch).fill(0).map(() => Array(cw).fill(0));
-                digitCluster.pixels.forEach(p => {
-                    cropBuffer[p.y - digitCluster.minY][p.x - digitCluster.minX] = 1;
-                });
-
-                for (let cy = 0; cy < ch; cy++) {
-                    for (let cx = 0; cx < cw; cx++) {
-                        if (cropBuffer[cy][cx] === 1) {
-                            const cellX = Math.min(2, Math.floor(cx / cellW));
-                            const cellY = Math.min(2, Math.floor(cy / cellH));
-                            grid[cellY * 3 + cellX]++;
-                        }
-                    }
-                }
-
-                const normGrid = grid.map(v => Number((v / darkPixels).toFixed(3)));
-                
-                // Classify header digit
-                if (cw < 6) return 1;
-                if (normGrid[3] < 0.02) {
-                    if (normGrid[6] > normGrid[8]) {
-                        return 2;
-                    } else {
-                        return 3;
-                    }
-                }
-                if (normGrid[4] < 0.08) {
-                    return 0;
-                }
-                return 0;
+                const result = classifySmallUiDigitFromCrop(cropPixels, w, h);
+                return result.digit;
             }
 
             const attReg = activeConfig.attemptsRegion;
@@ -322,59 +198,25 @@ app.whenReady().then(() => {
             const cropX = dc.x;
             const cropY = dc.y;
 
-            let darkPixels = 0;
-            let minX = cropW, maxX = 0, minY = cropH, maxY = 0;
-            const cropBuffer = new Uint8Array(cropW * cropH);
-
+            const cropPixels = new Uint8Array(cropW * cropH * 4);
             for (let cy = 0; cy < cropH; cy++) {
                 for (let cx = 0; cx < cropW; cx++) {
-                    const pixelIdx = ((cropY + cy) * size.width + (cropX + cx)) * 4;
-                    const r = bitmap[pixelIdx];
-                    const g = bitmap[pixelIdx + 1];
-                    const b = bitmap[pixelIdx + 2];
-                    const val = (r + g + b) / 3;
-
-                    if (val <= 110) {
-                        darkPixels++;
-                        if (cx < minX) minX = cx;
-                        if (cx > maxX) maxX = cx;
-                        if (cy < minY) minY = cy;
-                        if (cy > maxY) maxY = cy;
-                        cropBuffer[cy * cropW + cx] = 1;
-                    }
+                    const srcIdx = ((cropY + cy) * size.width + (cropX + cx)) * 4;
+                    const destIdx = (cy * cropW + cx) * 4;
+                    cropPixels[destIdx] = bitmap[srcIdx];
+                    cropPixels[destIdx+1] = bitmap[srcIdx+1];
+                    cropPixels[destIdx+2] = bitmap[srcIdx+2];
+                    cropPixels[destIdx+3] = bitmap[srcIdx+3];
                 }
             }
 
-            if (darkPixels < 30) {
-                console.log(`${dc.label}: 0 (darkPixels = ${darkPixels})`);
-                return;
-            }
-
-            const w = maxX - minX + 1;
-            const h = maxY - minY + 1;
-
-            const cellW = w / 3;
-            const cellH = h / 3;
-            const grid = Array(9).fill(0);
-
-            for (let cy = minY; cy <= maxY; cy++) {
-                for (let cx = minX; cx <= maxX; cx++) {
-                    if (cropBuffer[cy * cropW + cx] === 1) {
-                        const cellX = Math.min(2, Math.floor((cx - minX) / cellW));
-                        const cellY = Math.min(2, Math.floor((cy - minY) / cellH));
-                        grid[cellY * 3 + cellX]++;
-                    }
-                }
-            }
-
-            const normGrid = grid.map(v => Number((v / darkPixels).toFixed(3)));
-            const digit = classifyDigit(w, h, normGrid);
-            console.log(`${dc.label}: Detected Digit ${digit} (w=${w}, h=${h}, darkPixels=${darkPixels})`);
+            const result = classifySmallUiDigitFromCrop(cropPixels, cropW, cropH);
+            const digit = result.digit !== null ? result.digit : 0;
+            console.log(`${dc.label}: Detected Digit ${digit} (w=${result.w}, h=${result.h}, confidence=${result.confidence ? result.confidence.toFixed(4) : 'n/a'})`);
             const bp = parseInt(dc.label);
             if (!isNaN(bp) && bp >= 1 && bp <= 5) {
                 remainingDeck[bp] = digit;
             }
-
         });
 
         // Build solver deck
@@ -390,9 +232,10 @@ app.whenReady().then(() => {
         const effectiveAttempts = isFreeTrial ? 3 : (solveAttempts || 3);
         const effectiveAbandons = isFreeTrial ? 3 : solveAbandons;
         const effectiveDoubles = isFreeTrial ? 2 : solveDoubles;
+        const effectiveIsDoubled = isFreeTrial ? false : isDoubled;
 
         const solver = new SwordmancySolver(solverDeck, 4);
-        const advice = solver.getBestAction(effectiveAttempts, effectiveAbandons, effectiveDoubles, hand, isDoubled);
+        const advice = solver.getBestAction(effectiveAttempts, effectiveAbandons, effectiveDoubles, hand, effectiveIsDoubled);
         console.log(`Advice Action: ${advice.action}, EV: ${advice.ev.toFixed(1)}`);
         console.log(`EV Stop: ${advice.details.evStop !== null ? advice.details.evStop.toFixed(1) : 'null'}`);
         console.log(`EV Draw: ${advice.details.evDraw !== null ? advice.details.evDraw.toFixed(1) : 'null'}`);
@@ -409,10 +252,22 @@ app.whenReady().then(() => {
         // Verify result
         const expectedStr = JSON.stringify(testCase.expected);
         const actualStr = JSON.stringify(scannedSlots);
-        console.log(`Expected: ${expectedStr}`);
-        console.log(`Actual:   ${actualStr}`);
         
-        if (expectedStr === actualStr) {
+        let isPass = (expectedStr === actualStr) &&
+                     (isFreeTrial === testCase.expectedFreeTrial);
+        
+        if (!isFreeTrial) {
+            isPass = isPass && (solveAttempts === testCase.expectedAttempts);
+            // Xác nhận chéo thêm số lượt Doubles nếu double switch hiển thị
+            if (isDoubleSwitchPresent) {
+                isPass = isPass && (solveDoubles === testCase.expectedDoubles);
+            }
+        }
+        
+        console.log(`Expected Hand: ${expectedStr}, Mode: ${testCase.expectedFreeTrial ? 'FREE' : 'REWARDED'}, Attempts: ${testCase.expectedAttempts}`);
+        console.log(`Actual Hand:   ${actualStr}, Mode: ${isFreeTrial ? 'FREE' : 'REWARDED'}, Attempts: ${solveAttempts}`);
+        
+        if (isPass) {
             console.log(`RESULT: PASS`);
         } else {
             console.log(`RESULT: FAIL (mismatch)`);

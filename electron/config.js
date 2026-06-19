@@ -81,10 +81,10 @@ const CONFIG = {
 
             // Tọa độ vùng chứa chữ số lượt nhân đôi còn lại (Doubles remaining)
             doublesRegion: {
-                xStart: 1480,
-                yStart: 1155,
-                xEnd: 1505,
-                yEnd: 1180
+                xStart: 1468,
+                yStart: 114,
+                xEnd: 1478,
+                yEnd: 134
             }
         }
     }

@@ -48,14 +48,14 @@ const OCR_TEMPLATES = {
         ]
     ],
     '4': [
-        // Mẫu giả lập (synthetic 4)
+        // Mẫu thực tế từ ảnh chụp game
         [
             0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000,
-            0x00001f00, 0x00003f00, 0x00003f00, 0x00007f00, 0x0000ef00, 0x0000ef00, 0x0001cf00, 0x00038f00,
-            0x00070f00, 0x00070f00, 0x000e0f00, 0x001c0f00, 0x001c0f00, 0x00380f00, 0x00700f00, 0x00700f00,
-            0x00e00f00, 0x01c00f00, 0x03800f00, 0x03800f00, 0x07ffffe0, 0x03ffffe0, 0x03ffffe0, 0x03ffffe0,
-            0x00000f00, 0x00000f00, 0x00000f00, 0x00000f00, 0x00000f00, 0x00000f00, 0x00000f00, 0x00000f00,
-            0x00000f00, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000
+            0x00000000, 0x0001fe00, 0x0003fe00, 0x0003fc00, 0x0007f800, 0x000ff800, 0x000ff000, 0x001fe000,
+            0x003fe000, 0x003fe000, 0x007f8000, 0x007f8000, 0x007f8000, 0x00ff0000, 0x01ff7f80, 0x01fe7f80,
+            0x03fc7f80, 0x07fc7f80, 0x07f87fc0, 0x0ffffff8, 0x0ffffff8, 0x1ffffff8, 0x1ffffff8, 0x1ffffff8,
+            0x1ffffff8, 0x1ffffff8, 0x00007fc0, 0x00007f80, 0x00007f80, 0x00007f80, 0x00007fc0, 0x00000000,
+            0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000
         ]
     ],
     '5': [
@@ -68,6 +68,39 @@ const OCR_TEMPLATES = {
             0x03f01ff8, 0x0ff83ff8, 0x1ffdfff8, 0x0ffffff8, 0x07fffff0, 0x07ffffe0, 0x03ffffc0, 0x01ffff80,
             0x007fff00, 0x000fe000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000, 0x00000000
         ]
+    ]
+};
+
+const SMALL_UI_TEMPLATES = {
+    '0': [
+        0, 0, 0, 0, 0, 0, 0, 0, 1046528, 1046528, 8388352, 67108832, 67108832, 67108832, 133963760, 133963760, 133171184, 535824376, 535824376, 535824376, 535824376, 535824376, 535824376, 535824376, 535824376, 535824376, 535824376, 535824376, 535824376, 535824376, 535824368, 535824368, 133171184, 133963760, 67108832, 67108832, 67108832, 8388352, 8388352, 1046528, 0, 0, 0, 0, 0, 0, 0, 0
+    ],
+    '1': [
+        0, 0, 0, 0, 0, 1046528, 1046528, 1046528, 1046528, 4192256, 4192256, 536868864, 536868864, 536868864, 536868864, 536868864, 536868864, 536868864, 1046528, 1046528, 1046528, 1046528, 1046528, 1046528, 1046528, 1046528, 1046528, 1046528, 1046528, 1046528, 1046528, 1046528, 1046528, 1046528, 1046528, 1046528, 1046528, 536870904, 536870904, 536870904, 536870904, 536870904, 536870904, 0, 0, 0, 0, 0
+    ],
+    '2': [
+        0, 0, 0, 0, 0, 0, 0, 4190208, 4190208, 134217216, 134217216, 134217664, 134217664, 134217664, 130056176, 100671472, 100671472, 8176, 4080, 4080, 8176, 8128, 8128, 32704, 65408, 65408, 65408, 523776, 523776, 2096128, 4186112, 4186112, 16744448, 33488896, 33488896, 536870904, 536870904, 536870904, 536870904, 536870904, 536870904, 0, 0, 0, 0, 0, 0, 0
+    ],
+    '3': [
+        0, 0, 0, 0, 0, 0, 0, 4193280, 4193280, 134217664, 134217664, 134217712, 134217720, 134217720, 130031608, 100667384, 100667384, 4088, 4088, 4088, 8176, 524224, 524224, 523776, 524224, 524224, 524272, 4088, 4088, 1016, 1016, 1016, 503317496, 532680696, 532680696, 536870904, 536870904, 536870896, 134217664, 134217664, 4193280, 0, 0, 0, 0, 0, 0, 0
+    ],
+    '4': [
+        0, 0, 0, 0, 0, 0, 0, 0, 65408, 65408, 65408, 130944, 130944, 262016, 1048448, 1048448, 1048448, 2047872, 2047872, 8273792, 16531328, 66076544, 66076544, 66076544, 132136832, 132136832, 528498560, 536870904, 536870904, 536870904, 536870904, 536870904, 536870904, 16256, 16256, 16256, 16256, 16256, 16256, 16256, 0, 0, 0, 0, 0, 0, 0, 0
+    ],
+    '5': [
+        0, 0, 0, 0, 0, 0, 0, 134217712, 134217712, 134217712, 134217712, 134217712, 134217712, 134217712, 133693440, 133693440, 133693440, 133693440, 133693440, 133693440, 134216704, 134217600, 134217600, 134217664, 134217712, 134217712, 117473264, 4088, 4088, 4088, 4088, 4088, 402657264, 520101872, 520101872, 536870848, 536870848, 536870848, 536870400, 536870400, 16773120, 0, 0, 0, 0, 0, 0, 0
+    ],
+    '6': [
+        0, 0, 0, 0, 0, 0, 0, 0, 131040, 131040, 1048544, 8388576, 8388576, 16777184, 67043424, 67043424, 66846720, 133955584, 133955584, 133299968, 134217696, 134217712, 134217712, 536870896, 535830520, 535830520, 535824376, 535823352, 535823352, 133170168, 133170168, 133170168, 133957624, 134094832, 67108848, 67108848, 16777184, 8388480, 8388480, 1047552, 0, 0, 0, 0, 0, 0, 0, 0
+    ],
+    '7': [
+        0, 0, 0, 0, 0, 0, 0, 536870904, 536870904, 536870904, 536870904, 536870904, 536870904, 536870904, 4080, 8176, 8176, 8128, 32704, 32704, 65408, 65408, 65408, 261632, 261632, 261632, 523264, 520192, 520192, 2093056, 4186112, 4186112, 4186112, 16744448, 16744448, 16744448, 16744448, 33488896, 33488896, 33488896, 133955584, 0, 0, 0, 0, 0, 0, 0
+    ],
+    '8': [
+        0, 0, 0, 0, 0, 0, 0, 0, 2096128, 2096128, 16777088, 67108848, 67108848, 134217712, 133963760, 133963760, 535824376, 535824368, 535824368, 133957616, 134209504, 67108736, 67108736, 8388480, 16777184, 16777184, 133300208, 133177336, 133177336, 534775800, 534774776, 534774776, 535823352, 536616952, 134217712, 134217712, 134217696, 16777088, 16777088, 2096128, 0, 0, 0, 0, 0, 0, 0, 0
+    ],
+    '9': [
+        0, 0, 0, 0, 0, 0, 0, 0, 1046528, 1046528, 16776960, 67108736, 67108736, 134217696, 133971952, 133971952, 535830512, 535824368, 535824368, 534775792, 535824376, 535824376, 535824376, 536610808, 134217720, 134217720, 134217712, 67108848, 67108848, 8374256, 8176, 8176, 8160, 50397152, 67108736, 67108736, 67108608, 67106816, 67106816, 67092480, 0, 0, 0, 0, 0, 0, 0, 0
     ]
 };
 
@@ -203,16 +236,17 @@ function normalizeComponent(bestComponent, cropW, cropH) {
 /**
  * Thuật toán so khớp mẫu chính thức dùng IoU
  */
-function matchTemplate(inputMask) {
+function matchTemplate(inputMask, templates = OCR_TEMPLATES) {
     const results = {};
     let bestDigit = null;
     let bestScore = -1;
     
-    Object.keys(OCR_TEMPLATES).forEach(digitStr => {
-        const templates = OCR_TEMPLATES[digitStr];
+    Object.keys(templates).forEach(digitStr => {
+        // Hỗ trợ cả mảng 2D (OCR_TEMPLATES có nhiều mẫu) và mảng 1D (SMALL_UI_TEMPLATES chỉ có 1 mẫu)
+        const templateList = Array.isArray(templates[digitStr][0]) ? templates[digitStr] : [templates[digitStr]];
         let maxIoUForDigit = 0;
         
-        templates.forEach(templateRows => {
+        templateList.forEach(templateRows => {
             let intersection = 0;
             let union = 0;
             
@@ -346,15 +380,130 @@ function classifyCardDigitFromCrop(cropPixels, cropW, cropH) {
     return resultObj;
 }
 
+/**
+ * Phân loại chữ số nhỏ tĩnh ở đầu và cột phải từ vùng cắt
+ */
+function classifySmallUiDigitFromCrop(cropPixels, cropW, cropH) {
+    // 1. Nhị phân hóa với ngưỡng cứng 110 (UI phẳng tĩnh không loang sáng)
+    const cropBuffer = new Uint8Array(cropW * cropH);
+    for (let cy = 0; cy < cropH; cy++) {
+        for (let cx = 0; cx < cropW; cx++) {
+            const srcIdx = (cy * cropW + cx) * 4;
+            const r = cropPixels[srcIdx];
+            const g = cropPixels[srcIdx+1];
+            const b = cropPixels[srcIdx+2];
+            const val = (r + g + b) / 3;
+            if (val <= 110) {
+                cropBuffer[cy * cropW + cx] = 1;
+            }
+        }
+    }
+
+    // 2. Tìm connected component lớn nhất
+    const visited = new Uint8Array(cropW * cropH);
+    let best = null;
+
+    for (let y = 0; y < cropH; y++) {
+        for (let x = 0; x < cropW; x++) {
+            const startIdx = y * cropW + x;
+            if (visited[startIdx] || cropBuffer[startIdx] !== 1) continue;
+
+            const stack = [startIdx];
+            visited[startIdx] = 1;
+            const pixels = [];
+            let minX = x, maxX = x, minY = y, maxY = y;
+
+            while (stack.length > 0) {
+                const idx = stack.pop();
+                const cx = idx % cropW;
+                const cy = Math.floor(idx / cropW);
+                const flatIndex = cy * cropW + cx;
+                pixels.push(flatIndex);
+
+                if (cx < minX) minX = cx;
+                if (cx > maxX) maxX = cx;
+                if (cy < minY) minY = cy;
+                if (cy > maxY) maxY = cy;
+
+                for (let dy = -1; dy <= 1; dy++) {
+                    for (let dx = -1; dx <= 1; dx++) {
+                        if (dx === 0 && dy === 0) continue;
+                        const nx = cx + dx;
+                        const ny = cy + dy;
+                        if (nx < 0 || nx >= cropW || ny < 0 || ny >= cropH) continue;
+                        const nextIdx = ny * cropW + nx;
+                        if (!visited[nextIdx] && cropBuffer[nextIdx] === 1) {
+                            visited[nextIdx] = 1;
+                            stack.push(nextIdx);
+                        }
+                    }
+                }
+            }
+
+            const w = maxX - minX + 1;
+            const h = maxY - minY + 1;
+            const count = pixels.length;
+            
+            // Bounding box chữ số nhỏ tĩnh (attempts, doubles, deck counts)
+            const looksLikeDigit = count >= 10 && w >= 3 && h >= 8 && w <= 25 && h <= 32;
+            if (!looksLikeDigit) continue;
+
+            const score = count;
+            if (!best || score > best.score) {
+                best = { pixels, minX, maxX, minY, maxY, w, h, count, score };
+            }
+        }
+    }
+
+    if (!best) {
+        return { digit: null, reason: 'no small digit component found' };
+    }
+
+    // 3. Chuẩn hóa hình dạng về 32x48
+    const normMask = normalizeComponent(best, cropW, cropH);
+
+    // 4. Khớp mẫu dùng SMALL_UI_TEMPLATES
+    const match = matchTemplate(normMask, SMALL_UI_TEMPLATES);
+
+    // Bộ lọc chấp nhận kết quả
+    const minConfidence = 0.45;
+    const minMargin = 0.05;
+    const isAccepted = match.confidence >= minConfidence && match.margin >= minMargin;
+    
+    const resultObj = {
+        digit: isAccepted ? match.digit : null,
+        darkPixels: best.count,
+        minX: best.minX,
+        maxX: best.maxX,
+        minY: best.minY,
+        maxY: best.maxY,
+        w: best.w,
+        h: best.h,
+        confidence: match.confidence,
+        margin: match.margin,
+        scores: match.scores
+    };
+
+    if (!isAccepted) {
+        resultObj.reason = `rejected bestScore=${match.confidence.toFixed(2)} margin=${match.margin.toFixed(2)}`;
+    }
+
+    return resultObj;
+}
+
 // Xuất module cho cả môi trường Node (CommonJS) và Web (window)
 if (typeof module !== 'undefined' && typeof module.exports !== 'undefined') {
     module.exports = {
         OCR_TEMPLATES,
+        SMALL_UI_TEMPLATES,
         popcount,
         getLargestDigitComponent,
         normalizeComponent,
-        classifyCardDigitFromCrop
+        classifyCardDigitFromCrop,
+        classifySmallUiDigitFromCrop
     };
 } else {
     window.classifyCardDigitFromCrop = classifyCardDigitFromCrop;
+    window.classifySmallUiDigitFromCrop = classifySmallUiDigitFromCrop;
+    window.SMALL_UI_TEMPLATES = SMALL_UI_TEMPLATES;
 }
