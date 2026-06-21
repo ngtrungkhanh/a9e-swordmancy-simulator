@@ -445,7 +445,9 @@ function classifySmallUiDigitFromCrop(cropPixels, cropW, cropH) {
             const count = pixels.length;
             
             // Bounding box chữ số nhỏ tĩnh (attempts, doubles, deck counts)
-            const looksLikeDigit = count >= 10 && w >= 3 && h >= 8 && w <= 25 && h <= 32;
+            const scale = cropH >= 35 ? (cropH / 40) : (cropH / 20);
+            const minCount = Math.max(8, Math.round(30 * scale * scale));
+            const looksLikeDigit = count >= minCount && w >= 3 && h >= 8 && w <= 25 && h <= 32;
             if (!looksLikeDigit) continue;
 
             const score = count;
@@ -491,6 +493,213 @@ function classifySmallUiDigitFromCrop(cropPixels, cropW, cropH) {
     return resultObj;
 }
 
+/**
+ * Kiểm tra xem thẻ bài có đang được lật mặt lên hay không
+ */
+function isFaceCardSlot(imageSource, cardPos, activeConfig) {
+    // 1. Kiểm tra dải màu đen ở trên để xác định thẻ lật (giữ nguyên logic gốc)
+    const rel = activeConfig.cardFaceStripRelative || { xOffset: 0, yOffset: 10, width: 300, height: 50 };
+    const stripX = cardPos.x + rel.xOffset;
+    const stripY = cardPos.y + rel.yOffset;
+    const stripW = rel.width;
+    const stripH = rel.height;
+    const pixels = imageSource.getCrop(stripX, stripY, stripW, stripH);
+    let stripPixels = 0;
+
+    for (let i = 0; i < stripW * stripH; i++) {
+        const idx = i * 4;
+        const val = (pixels[idx] + pixels[idx + 1] + pixels[idx + 2]) / 3;
+        if (val < 85) {
+            stripPixels++;
+        }
+    }
+
+    const minStripPixels = Math.max(10, Math.round(stripW * stripH * 0.00533));
+    const hasStrip = stripPixels > minStripPixels;
+
+    // 2. Kiểm tra độ sáng nền trắng trong vùng chữ số để loại bỏ 100% khe trống màu tối
+    const numRel = activeConfig.cardNumberRelative || { xOffset: 295, yOffset: 0, width: 75, height: 90 };
+    const numX = cardPos.x + numRel.xOffset;
+    const numY = cardPos.y + numRel.yOffset;
+    const numW = numRel.width;
+    const numH = numRel.height;
+    const numPixels = imageSource.getCrop(numX, numY, numW, numH);
+    let brightPixels = 0;
+    
+    for (let i = 0; i < numW * numH; i++) {
+        const idx = i * 4;
+        const val = (numPixels[idx] + numPixels[idx+1] + numPixels[idx+2]) / 3;
+        if (val > 150) { // Nền trắng sáng của lá bài
+            brightPixels++;
+        }
+    }
+    
+    const minBrightPixels = Math.round(numW * numH * 0.50); // Yêu cầu ít nhất 50% diện tích vùng chữ số sáng trắng
+    const hasBrightBg = brightPixels > minBrightPixels;
+
+    return { isFace: hasStrip && hasBrightBg, stripPixels, brightPixels };
+}
+
+/**
+ * Quét chữ số nhỏ trong một vùng xác định
+ */
+function scanDigitInRegion(imageSource, xStart, yStart, xEnd, yEnd) {
+    const w = xEnd - xStart;
+    const h = yEnd - yStart;
+    const cropPixels = imageSource.getCrop(xStart, yStart, w, h);
+    const result = classifySmallUiDigitFromCrop(cropPixels, w, h);
+    return result;
+}
+
+/**
+ * Quét toàn bộ trạng thái UI game từ nguồn ảnh
+ */
+function scanFullState(imageSource, activeConfig) {
+    const remainingDeck = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+
+    // 1. Quét số lượng bài còn lại trong túi bên phải
+    activeConfig.deckCounts.forEach((dc, idx) => {
+        const cropW = dc.width;
+        const cropH = dc.height;
+        const cropX = dc.x;
+        const cropY = dc.y;
+
+        const cropPixels = imageSource.getCrop(cropX, cropY, cropW, cropH);
+        const result = classifySmallUiDigitFromCrop(cropPixels, cropW, cropH);
+        remainingDeck[idx+1] = result.digit !== null ? result.digit : 0;
+    });
+
+    // 2. Quét 5 khe bài ở giữa sân
+    const scannedSlots = Array(5).fill(null);
+    const slotsConfidence = Array(5).fill(1.0);
+    const slotDetections = Array(5).fill(null);
+
+    activeConfig.cards.forEach((cardPos, cardIdx) => {
+        const faceCheck = isFaceCardSlot(imageSource, cardPos, activeConfig);
+        if (!faceCheck.isFace) {
+            return;
+        }
+
+        const cropX = cardPos.x + activeConfig.cardNumberRelative.xOffset;
+        const cropY = cardPos.y + activeConfig.cardNumberRelative.yOffset;
+        const cropW = activeConfig.cardNumberRelative.width;
+        const cropH = activeConfig.cardNumberRelative.height;
+
+        const cropPixels = imageSource.getCrop(cropX, cropY, cropW, cropH);
+        const result = classifyCardDigitFromCrop(cropPixels, cropW, cropH);
+        if (result.digit !== null) {
+            scannedSlots[cardIdx] = result.digit;
+        }
+        slotsConfidence[cardIdx] = result.confidence !== undefined ? result.confidence : 0;
+        slotDetections[cardIdx] = result;
+    });
+
+    // 3. Quét trạng thái Nhân Đôi điểm (x2)
+    const dsConfig = activeConfig.doubleSwitch;
+    const dsPixels = imageSource.getCrop(dsConfig.x, dsConfig.y, dsConfig.width, dsConfig.height);
+    let whitePixels = 0;
+    for (let i = 0; i < dsConfig.width * dsConfig.height; i++) {
+        if (dsPixels[i*4] > 220 && dsPixels[i*4+1] > 220 && dsPixels[i*4+2] > 220) {
+            whitePixels++;
+        }
+    }
+    const isDoubled = whitePixels > Math.max(20, Math.round(dsConfig.width * dsConfig.height * 0.026));
+
+    // 4. Quét chữ Double active capsule để nhận diện mode
+    const capConfig = activeConfig.doubleSwitchCapsule;
+    const capPixels = imageSource.getCrop(capConfig.x, capConfig.y, capConfig.width, capConfig.height);
+    let darkCap = 0;
+    for (let i = 0; i < capConfig.width * capConfig.height; i++) {
+        if ((capPixels[i*4] + capPixels[i*4+1] + capPixels[i*4+2]) / 3 < 110) {
+            darkCap++;
+        }
+    }
+    const isDoubleSwitchPresent = darkCap > Math.max(10, Math.round(capConfig.width * capConfig.height * 0.0083));
+
+    // 5. Quét dấu ngoặc vuông (bracket) lượt attempts
+    const brConfig = activeConfig.bracket;
+    const brPixels = imageSource.getCrop(brConfig.x, brConfig.y, brConfig.width, brConfig.height);
+    let darkBr = 0;
+    for (let i = 0; i < brConfig.width * brConfig.height; i++) {
+        if ((brPixels[i*4] + brPixels[i*4+1] + brPixels[i*4+2]) / 3 < 110) {
+            darkBr++;
+        }
+    }
+    const isBracketPresent = darkBr > Math.max(5, Math.round(brConfig.width * brConfig.height * 0.074));
+
+    // Phân biệt chế độ Free Trial vs Rewarded
+    const hasDouble = isDoubleSwitchPresent || isDoubled;
+    const isFreeTrial = !hasDouble || !isBracketPresent;
+
+    // 6. Quét số lượt chơi (attempts) và lượt nhân đôi (doubles) nếu ở chế độ Rewarded
+    let attemptsLeft = 3;
+    let doublesLeft = 2;
+    let attemptsConfidence = 1.0;
+    let doublesConfidence = 1.0;
+
+    if (!isFreeTrial) {
+        // Attempts remaining
+        const attReg = activeConfig.attemptsRegion;
+        const attRes = scanDigitInRegion(imageSource, attReg.xStart, attReg.yStart, attReg.xEnd, attReg.yEnd);
+        if (attRes.digit !== null && attRes.digit >= 0 && attRes.digit <= 3) {
+            attemptsLeft = attRes.digit;
+            attemptsConfidence = attRes.confidence;
+        }
+
+        // Doubles remaining
+        const dblReg = activeConfig.doublesRegion;
+        const dblRes = scanDigitInRegion(imageSource, dblReg.xStart, dblReg.yStart, dblReg.xEnd, dblReg.yEnd);
+        if (dblRes.digit !== null && dblRes.digit >= 0 && dblRes.digit <= 2) {
+            doublesLeft = dblRes.digit;
+            doublesConfidence = dblRes.confidence;
+        }
+    }
+
+    // 7. Quét tổng điểm hiển thị trên game bằng cách tìm cột được highlight màu xanh cyan
+    let gameScore = null;
+    if (activeConfig.scoreColumns && activeConfig.scoreColumns.length === 11) {
+        let bestCol = -1;
+        let maxCyan = 0;
+        
+        activeConfig.scoreColumns.forEach((col, idx) => {
+            const pixels = imageSource.getCrop(col.x - 15, col.y, 30, 1);
+            let cyanCount = 0;
+            for (let i = 0; i < 30; i++) {
+                const r = pixels[i*4];
+                const g = pixels[i*4+1];
+                const b = pixels[i*4+2];
+                if (b > 175 && g > 165 && b > r + 25) {
+                    cyanCount++;
+                }
+            }
+            if (cyanCount > maxCyan && cyanCount > 5) {
+                maxCyan = cyanCount;
+                bestCol = idx;
+            }
+        });
+        
+        if (bestCol !== -1) {
+            gameScore = bestCol;
+        }
+    }
+
+    return {
+        isFreeTrial,
+        scannedSlots,
+        remainingDeck,
+        attemptsLeft,
+        doublesLeft,
+        isDoubled,
+        isBracketPresent,
+        isDoubleSwitchPresent,
+        slotsConfidence,
+        slotDetections,
+        attemptsConfidence,
+        doublesConfidence,
+        gameScore
+    };
+}
+
 // Xuất module cho cả môi trường Node (CommonJS) và Web (window)
 if (typeof module !== 'undefined' && typeof module.exports !== 'undefined') {
     module.exports = {
@@ -500,10 +709,14 @@ if (typeof module !== 'undefined' && typeof module.exports !== 'undefined') {
         getLargestDigitComponent,
         normalizeComponent,
         classifyCardDigitFromCrop,
-        classifySmallUiDigitFromCrop
+        classifySmallUiDigitFromCrop,
+        isFaceCardSlot,
+        scanFullState
     };
 } else {
     window.classifyCardDigitFromCrop = classifyCardDigitFromCrop;
     window.classifySmallUiDigitFromCrop = classifySmallUiDigitFromCrop;
     window.SMALL_UI_TEMPLATES = SMALL_UI_TEMPLATES;
+    window.isFaceCardSlot = isFaceCardSlot;
+    window.scanFullState = scanFullState;
 }

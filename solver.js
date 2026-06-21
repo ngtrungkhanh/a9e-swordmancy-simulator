@@ -135,7 +135,7 @@ class SwordmancySolver {
 
         // 4. Value of Double
         let valDouble = -Infinity;
-        if (hand.length === 2 && !doubled && d > 0) {
+        if (hand.length >= 1 && hand.length <= 2 && !doubled && d > 0) {
             valDouble = this.solve(a, f, d - 1, hand, true);
         }
 
@@ -198,7 +198,7 @@ class SwordmancySolver {
         }
 
         let evDouble = -Infinity;
-        if (hand.length === 2 && !doubled && d > 0) {
+        if (hand.length >= 1 && hand.length <= 2 && !doubled && d > 0) {
             evDouble = this.solve(a, f, d - 1, hand, true);
         }
 
@@ -395,7 +395,7 @@ class SwordmancySolver {
 
         // Calculate EV of DOUBLE
         let evDouble = -Infinity;
-        if (hand.length === 2 && !doubled && d > 0) {
+        if (hand.length >= 1 && hand.length <= 2 && !doubled && d > 0) {
             evDouble = this.solve(a, f, d - 1, hand, true);
         }
 
@@ -531,7 +531,7 @@ class SwordmancySolver {
                         action = advice.action;
                     } else if (strategyType === 'reddit_simple_618k') {
                         // AltMaxWhenNoRerolls(9, 8) - Draw/reroll except on 10, unless out of rerolls (f === 0) in which case accept 9 as well.
-                        if (hand.length === 2 && !doubled && d > 0 && a >= 2) {
+                        if (hand.length >= 1 && hand.length <= 2 && !doubled && d > 0 && a >= 2) {
                             action = 'Double';
                         } else {
                             if (f > 0) {
@@ -542,7 +542,7 @@ class SwordmancySolver {
                         }
                     } else if (strategyType === 'reddit_improved_621k') {
                         // Improved Reddit Strategy (621k) - Accounting for 4th card risk.
-                        if (hand.length === 2 && !doubled && d > 0 && a >= 2) {
+                        if (hand.length >= 1 && hand.length <= 2 && !doubled && d > 0 && a >= 2) {
                             action = 'Double';
                         } else {
                             const hSize = hand.length;
@@ -556,7 +556,7 @@ class SwordmancySolver {
                         }
                     } else if (strategyType === 'simple_max_8') {
                         // SimpleMax(8) - Always draw/reroll when score <= 8 (stops on 9 or 10)
-                        if (hand.length === 2 && !doubled && d > 0 && a >= 2) {
+                        if (hand.length >= 1 && hand.length <= 2 && !doubled && d > 0 && a >= 2) {
                             action = 'Double';
                         } else {
                             action = (score >= 9) ? 'Stop' : 'Draw';

@@ -5,6 +5,9 @@ const path = require('path');
 // Disable sandboxing to resolve GPU/capture issues when running as Administrator
 app.commandLine.appendSwitch('no-sandbox');
 app.commandLine.appendSwitch('disable-gpu-sandbox');
+app.commandLine.appendSwitch('enable-features', 'WebRTC-WgcWindowCapturer');
+// Disable CalculateWindowOcclusion to prevent renderer freezing/throttling when overlay loses focus
+app.commandLine.appendSwitch('disable-features', 'CalculateWindowOcclusion');
 
 const isDev = !app.isPackaged;
 let logFile = null;
@@ -157,6 +160,8 @@ async function captureAndSendScreenshot() {
 }
 
 const sizeFilePath = path.join(app.getPath('userData'), 'window-size.json');
+const overlaySizeFilePath = path.join(app.getPath('userData'), 'overlay-size.json');
+const modeFilePath = path.join(app.getPath('userData'), 'window-mode.json');
 
 function saveWindowSize(width, height) {
     try {
@@ -182,18 +187,81 @@ function loadWindowSize() {
     return { width: 1280, height: 820 }; // default
 }
 
+function saveOverlaySize(width, height) {
+    try {
+        fs.writeFileSync(overlaySizeFilePath, JSON.stringify({ width, height }));
+        log(`Saved overlay window size: ${width}x${height}`);
+    } catch (e) {
+        log(`Failed to save overlay window size: ${e.message}`);
+    }
+}
+
+function loadOverlaySize() {
+    try {
+        if (fs.existsSync(overlaySizeFilePath)) {
+            const data = JSON.parse(fs.readFileSync(overlaySizeFilePath, 'utf8'));
+            if (data.width && data.height) {
+                log(`Loaded saved overlay window size: ${data.width}x${data.height}`);
+                return data;
+            }
+        }
+    } catch (e) {
+        log(`Failed to load overlay window size: ${e.message}`);
+    }
+    return { width: Math.round(640 * uiScale), height: Math.round(220 * uiScale) }; // default overlay size
+}
+
+function saveWindowMode(mode) {
+    try {
+        fs.writeFileSync(modeFilePath, JSON.stringify({ mode }));
+        log(`Saved window mode: ${mode}`);
+    } catch (e) {
+        log(`Failed to save window mode: ${e.message}`);
+    }
+}
+
+function loadWindowMode() {
+    try {
+        if (fs.existsSync(modeFilePath)) {
+            const data = JSON.parse(fs.readFileSync(modeFilePath, 'utf8'));
+            if (data.mode) {
+                log(`Loaded saved window mode: ${data.mode}`);
+                return data.mode;
+            }
+        }
+    } catch (e) {
+        log(`Failed to load window mode: ${e.message}`);
+    }
+    return 'normal'; // default
+}
+
 function createWindow() {
     log(`createWindow packaged=${app.isPackaged} dirname=${__dirname}`);
 
-    const savedSize = loadWindowSize();
-    let initialWidth = savedSize.width;
-    let initialHeight = savedSize.height;
-    
-    // Scale default dimensions if first run or unmodified
-    const isDefaultSize = (savedSize.width === 1280 && savedSize.height === 820);
-    if (isDefaultSize || !fs.existsSync(sizeFilePath)) {
-        initialWidth = Math.round(1280 * uiScale);
-        initialHeight = Math.round(820 * uiScale);
+    const savedMode = loadWindowMode();
+    currentMode = savedMode;
+
+    let initialWidth, initialHeight;
+    let minW, minH;
+    if (currentMode === 'overlay') {
+        const savedOverlay = loadOverlaySize();
+        initialWidth = savedOverlay.width;
+        initialHeight = savedOverlay.height;
+        minW = Math.round(400 * uiScale);
+        minH = Math.round(150 * uiScale);
+    } else {
+        const savedSize = loadWindowSize();
+        initialWidth = savedSize.width;
+        initialHeight = savedSize.height;
+        
+        // Scale default dimensions if first run or unmodified
+        const isDefaultSize = (savedSize.width === 1280 && savedSize.height === 820);
+        if (isDefaultSize || !fs.existsSync(sizeFilePath)) {
+            initialWidth = Math.round(1280 * uiScale);
+            initialHeight = Math.round(820 * uiScale);
+        }
+        minW = Math.round(1024 * uiScale);
+        minH = Math.round(700 * uiScale);
     }
     
     // Safety cap to prevent window exceeding screen dimensions
@@ -209,8 +277,8 @@ function createWindow() {
     win = new BrowserWindow({
         width: initialWidth,
         height: initialHeight,
-        minWidth: Math.round(1024 * uiScale),
-        minHeight: Math.round(700 * uiScale),
+        minWidth: minW,
+        minHeight: minH,
         title: 'Swordmancy Live Assistant',
         transparent: true,
         frame: false,
@@ -220,14 +288,21 @@ function createWindow() {
         webPreferences: {
             contextIsolation: true,
             nodeIntegration: false,
-            preload: path.join(__dirname, 'preload.cjs')
+            preload: path.join(__dirname, 'preload.cjs'),
+            backgroundThrottling: false
         }
     });
 
+    if (currentMode === 'overlay') {
+        win.setAlwaysOnTop(true, 'screen-saver');
+    }
+
     // Save size on resize
     win.on('resize', () => {
-        if (currentMode === 'normal') {
-            const [width, height] = win.getSize();
+        const [width, height] = win.getSize();
+        if (currentMode === 'overlay') {
+            saveOverlaySize(width, height);
+        } else {
             saveWindowSize(width, height);
         }
     });
@@ -303,23 +378,107 @@ app.whenReady().then(() => {
     });
 
     const regF5 = globalShortcut.register('F5', () => {
-        log('F5 global hotkey pressed (Force Scan)');
+        log('F5 global hotkey pressed (Toggle Window Mode)');
         if (win && !win.isDestroyed()) {
-            win.webContents.send('force-scan');
-            captureAndSendScreenshot();
+            const nextMode = currentMode === 'normal' ? 'overlay' : 'normal';
+            applyWindowMode(nextMode);
+            win.webContents.send('window-mode-changed', nextMode);
         }
     });
 
     if (regF4) log('F4 (Toggle Auto-Scan) hotkey registered successfully.');
     else log('Failed to register F4 hotkey.');
 
-    if (regF5) log('F5 (Force Scan) hotkey registered successfully.');
+    if (regF5) log('F5 (Toggle Window Mode) hotkey registered successfully.');
     else log('Failed to register F5 hotkey.');
 
     // IPC Handlers
     ipcMain.on('request-screenshot', () => {
         log('Manual scan request received from renderer.');
         captureAndSendScreenshot();
+    });
+
+    ipcMain.handle('resolve-capture-source', async (event, forceScreen = false) => {
+        log(`resolve-capture-source IPC handler invoked. forceScreen: ${forceScreen}`);
+        try {
+            const sources = await desktopCapturer.getSources({
+                types: ['window', 'screen'],
+                thumbnailSize: { width: 1, height: 1 } // Low res to save CPU since we only want source IDs
+            });
+            
+            let targetSource = null;
+            if (forceScreen) {
+                log('resolve-capture-source: forceScreen is true. Resolving directly to primary screen.');
+                targetSource = sources.find(s => s.id.startsWith('screen'));
+            } else {
+                const keywords = ['endfield', 'swordmancy', 'arknights', '明日方舟', '终末地'];
+                const exactGameTitles = ['endfield', 'arknights: endfield', 'arknights endfield', '明日方舟：终末地', '明日方舟 终末地'];
+                
+                const ignoredPatterns = [
+                    'trợ lý', 'live assistant', 'assistant', 'a9e',
+                    'live testing', 'antigravity',
+                    'visual studio', 'vscode', 'code',
+                    'chrome', 'edge', 'firefox', 'opera', 'brave',
+                    'discord', 'messenger', 'slack', 'telegram',
+                    'cmd.exe', 'powershell', 'terminal', 'cmd',
+                    'explorer', 'tập tin', 'thư mục', 'folder',
+                    'git', 'github'
+                ];
+                
+                let ownSourceId = null;
+                try {
+                    if (win) {
+                        ownSourceId = win.getMediaSourceId();
+                    }
+                } catch (e) {
+                    log(`Failed to get own media source ID: ${e.message}`);
+                }
+                
+                const windowSources = sources.filter(source => {
+                    if (ownSourceId && source.id === ownSourceId) return false;
+                    const nameLower = source.name.toLowerCase();
+                    if (ignoredPatterns.some(pat => nameLower.includes(pat))) return false;
+                    return true;
+                });
+
+                // Pass 1: Exact match
+                for (const source of windowSources) {
+                    const nameLower = source.name.toLowerCase().trim();
+                    if (exactGameTitles.includes(nameLower)) {
+                        targetSource = source;
+                        log(`resolve-capture-source: Found exact match window: "${source.name}" (ID: ${source.id})`);
+                        break;
+                    }
+                }
+
+                // Pass 2: Keyword match
+                if (!targetSource) {
+                    for (const source of windowSources) {
+                        const nameLower = source.name.toLowerCase();
+                        if (keywords.some(kw => nameLower.includes(kw))) {
+                            targetSource = source;
+                            log(`resolve-capture-source: Found keyword match window: "${source.name}" (ID: ${source.id})`);
+                            break;
+                        }
+                    }
+                }
+
+                // Fallback: Primary screen
+                if (!targetSource) {
+                    log('resolve-capture-source: No matching game window found. Falling back to primary screen.');
+                    targetSource = sources.find(s => s.id.startsWith('screen'));
+                }
+            }
+
+            if (targetSource) {
+                log(`resolve-capture-source: Resolved to ID: ${targetSource.id} (${targetSource.name})`);
+                return targetSource.id;
+            }
+            return null;
+        } catch (err) {
+            log(`Error in resolve-capture-source: ${err.message}`);
+            return null;
+        }
     });
 
     ipcMain.handle('select-file', async () => {
@@ -357,38 +516,42 @@ app.whenReady().then(() => {
         log(`[Renderer] ${msg}`);
     });
 
-    ipcMain.on('set-window-mode', (event, mode) => {
-        if (!win || win.isDestroyed()) return;
-        currentMode = mode;
-        if (mode === 'overlay') {
-            win.setResizable(true);
-            const minW = Math.round(400 * uiScale);
-            const minH = Math.round(150 * uiScale);
-            win.setMinimumSize(minW, minH);
-            const targetW = Math.round(640 * uiScale);
-            const targetH = Math.round(220 * uiScale);
-            win.setSize(targetW, targetH);
-            win.setAlwaysOnTop(true, 'screen-saver');
-            win.setFocusable(true); // Keep HUD controls clickable when the user intentionally interacts with it.
-            log(`IPC: Switched window to Overlay Mode (${targetW}x${targetH}, AlwaysOnTop, focusable=true)`);
-        } else {
-            win.setResizable(true);
-            const minW = Math.round(1024 * uiScale);
-            const minH = Math.round(700 * uiScale);
-            win.setMinimumSize(minW, minH);
-            const savedSize = loadWindowSize();
-            let targetW = savedSize.width;
-            let targetH = savedSize.height;
-            // If the saved size is default size and hasn't been changed, scale it
-            if (savedSize.width === 1280 && savedSize.height === 820) {
-                targetW = Math.round(1280 * uiScale);
-                targetH = Math.round(820 * uiScale);
-            }
-            win.setSize(targetW, targetH);
-            win.setAlwaysOnTop(false);
-            win.setFocusable(true); // Re-enable focus for normal mode!
-            log(`IPC: Switched window to Normal Mode (${targetW}x${targetH}, focusable=true)`);
+function applyWindowMode(mode) {
+    if (!win || win.isDestroyed()) return;
+    currentMode = mode;
+    saveWindowMode(mode);
+    if (mode === 'overlay') {
+        win.setResizable(true);
+        const minW = Math.round(400 * uiScale);
+        const minH = Math.round(150 * uiScale);
+        win.setMinimumSize(minW, minH);
+        const savedOverlay = loadOverlaySize();
+        win.setSize(savedOverlay.width, savedOverlay.height);
+        win.setAlwaysOnTop(true, 'screen-saver');
+        win.setFocusable(true); // Keep HUD controls clickable when the user intentionally interacts with it.
+        log(`Switched window to Overlay Mode (${savedOverlay.width}x${savedOverlay.height}, AlwaysOnTop, focusable=true)`);
+    } else {
+        win.setResizable(true);
+        const minW = Math.round(1024 * uiScale);
+        const minH = Math.round(700 * uiScale);
+        win.setMinimumSize(minW, minH);
+        const savedSize = loadWindowSize();
+        let targetW = savedSize.width;
+        let targetH = savedSize.height;
+        // If the saved size is default size and hasn't been changed, scale it
+        if (savedSize.width === 1280 && savedSize.height === 820) {
+            targetW = Math.round(1280 * uiScale);
+            targetH = Math.round(820 * uiScale);
         }
+        win.setSize(targetW, targetH);
+        win.setAlwaysOnTop(false);
+        win.setFocusable(true); // Re-enable focus for normal mode!
+        log(`Switched window to Normal Mode (${targetW}x${targetH}, focusable=true)`);
+    }
+}
+
+    ipcMain.on('set-window-mode', (event, mode) => {
+        applyWindowMode(mode);
     });
 
     ipcMain.on('resize-window', (event, width, height) => {

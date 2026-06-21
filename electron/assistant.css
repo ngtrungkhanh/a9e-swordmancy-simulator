@@ -350,7 +350,7 @@ body {
     margin: 0;
     padding: 0;
     overflow: hidden;
-    background-color: rgba(8, 11, 18, 0.96);
+    background-color: rgba(24, 27, 36, 0.97);
     border: 1.5px solid rgba(0, 217, 255, 0.2);
     border-radius: 8px;
     box-sizing: border-box;
@@ -375,7 +375,7 @@ button, input, select, .win-control-btn, .hud-step-btn, .hud-win-btn {
     justify-content: space-between;
     align-items: center;
     padding: 0.75rem 1.5rem;
-    background: rgba(13, 17, 28, 0.9);
+    background: rgba(36, 41, 54, 0.95);
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
     border-radius: 8px 8px 0 0;
     height: 55px;
@@ -441,7 +441,7 @@ body.mode-overlay #main-layout {
     left: 0;
     width: 100vw;
     height: 100vh;
-    background: rgba(8, 11, 18, 0.88);
+    background: rgba(24, 27, 36, 0.92);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
     border: 1.5px solid var(--color-blue);
@@ -462,7 +462,7 @@ body.mode-overlay #main-layout {
 
 /* HUD Drag Handle bar */
 .hud-drag-handle {
-    background: rgba(13, 17, 28, 0.6);
+    background: rgba(36, 41, 54, 0.8);
     padding: 3px 8px;
     display: flex;
     justify-content: space-between;
@@ -658,9 +658,6 @@ body.mode-overlay #main-layout {
 
 /* HUD Window buttons (right side absolute) */
 .hud-window-controls {
-    position: absolute;
-    top: 4px;
-    right: 6px;
     display: flex;
     gap: 4px;
     -webkit-app-region: no-drag;
@@ -668,26 +665,30 @@ body.mode-overlay #main-layout {
 .hud-win-btn {
     background: transparent;
     border: none;
-    color: var(--text-muted);
-    width: 36px;
-    height: 36px;
+    color: var(--text-secondary);
+    width: 22px;
+    height: 22px;
     display: flex;
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    border-radius: 6px;
+    border-radius: 4px;
     transition: all 0.2s ease;
+    opacity: 0.85;
 }
 .hud-win-btn svg {
-    width: 16px !important;
-    height: 16px !important;
+    width: 12px !important;
+    height: 12px !important;
 }
 .hud-win-btn:hover {
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(255, 255, 255, 0.15);
     color: #fff;
+    opacity: 1;
 }
 .hud-win-btn.hud-close-btn:hover {
     background: #ef4444 !important;
+    color: #fff !important;
+    opacity: 1;
 }
 
 /* Custom Resize Handle for Transparent Frameless Window */
@@ -791,6 +792,13 @@ body.mode-overlay #main-layout {
 
 .scanning-flash {
     animation: camera-glow 0.8s infinite ease-in-out !important;
+}
+
+/* Blinking animation for LIVE indicator */
+@keyframes hud-blink {
+    0% { opacity: 1; }
+    50% { opacity: 0.2; }
+    100% { opacity: 1; }
 }
 
 

@@ -59,6 +59,16 @@ if (scrWidth < 2560) {
     if (uiScale < 0.75) uiScale = 0.75;
 }
 
+// Live Stream and Watch Loop State
+let mediaStream = null;
+let watchTimeout = null;
+let prevHashes = {};
+let isAnimating = false;
+let stableTicks = 0;
+let retryCount = 0;
+let inTrial = false;
+let streamVideo = null;
+
 // Stateful Round Tracking
 let currentRoundState = {
     isActive: false,              // Khởi tạo ván đấu đã hoạt động hay chưa
@@ -115,13 +125,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('hud-btn-close').onclick = () => {
         if (window.electronAPI) window.electronAPI.closeWindow();
     };
-    const winBtnScan = document.getElementById('win-btn-scan');
-    if (winBtnScan) {
-        winBtnScan.onclick = () => {
-            log('Header win-btn-scan clicked');
-            forceScanNow();
-        };
-    }
+
 
     // Load saved settings if any
     const savedMode = localStorage.getItem('currentMode');
@@ -175,8 +179,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     toggleCustomDeckConfig();
 
-    // Default to normal mode on startup as requested
-    setWindowMode('normal');
+    // Load last window mode on startup
+    const startMode = localStorage.getItem('currentWindowMode') || 'normal';
+    setWindowMode(startMode);
 
     // Setup Event Listeners
     setupEventListeners();
@@ -204,8 +209,12 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         window.electronAPI.onForceScan(() => {
-            log('Force scan F5 hotkey received in renderer');
-            forceScanNow();
+            log('Force scan F5 hotkey received in renderer (legacy)');
+        });
+
+        window.electronAPI.onWindowModeChanged((mode) => {
+            log(`Renderer: Window mode changed notification from main process: ${mode}`);
+            setWindowMode(mode, true);
         });
 
         window.electronAPI.onScreenshotCaptured((dataUrl) => {
@@ -314,7 +323,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function updateBadgeStatus(text, statusClass) {
     const badge = document.getElementById('app-status');
-    badge.innerText = text;
+    if (text === 'LIVE') {
+        badge.innerHTML = `
+            <span style="display: inline-flex; align-items: center; gap: 4px;">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="animation: hud-blink 1s infinite;"><path d="M23 6.07a1 1 0 0 0-.37-.77 1 1 0 0 0-.78-.23l-5.69 1.42a1 1 0 0 0-.73.97v9.12a1 1 0 0 0 .73.97l5.69 1.42a1 1 0 0 0 .78-.23 1 1 0 0 0 .37-.77zM2 5a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2z"/></svg>
+                <span style="animation: hud-blink 1s infinite; font-weight: bold;">LIVE</span>
+            </span>
+        `;
+    } else {
+        badge.innerText = text;
+    }
     badge.className = 'status-badge';
     if (statusClass) {
         badge.classList.add(statusClass);
@@ -322,10 +340,10 @@ function updateBadgeStatus(text, statusClass) {
 }
 
 let currentWindowMode = 'normal';
-function setWindowMode(mode) {
+function setWindowMode(mode, fromMain = false) {
     currentWindowMode = mode;
-    log(`Setting window mode to: ${mode}`);
-    if (window.electronAPI) {
+    log(`Setting window mode to: ${mode} (fromMain: ${fromMain})`);
+    if (!fromMain && window.electronAPI) {
         window.electronAPI.setWindowMode(mode);
     }
     if (mode === 'overlay') {
@@ -366,7 +384,7 @@ function setupEventListeners() {
         log(`Selected preset changed to ${selectedPreset}`);
         toggleCustomDeckConfig();
         if (lastScannedRemaining) {
-            runSolver(lastScannedRemaining.remainingDeck, lastScannedRemaining.isDoubled, lastScannedRemaining.isFreeTrial, lastScannedSlots);
+            runSolver(lastScannedRemaining.remainingDeck, lastScannedRemaining.isDoubled, lastScannedRemaining.isFreeTrial, lastScannedSlots, lastScannedRemaining.gameScore);
         }
     };
 
@@ -377,7 +395,7 @@ function setupEventListeners() {
             localStorage.setItem('customDeckPreset', JSON.stringify(DECK_PRESETS['custom']));
             log(`Custom deck ${v} BP updated to ${DECK_PRESETS['custom'][v]}`);
             if (lastScannedRemaining) {
-                runSolver(lastScannedRemaining.remainingDeck, lastScannedRemaining.isDoubled, lastScannedRemaining.isFreeTrial, lastScannedSlots);
+                runSolver(lastScannedRemaining.remainingDeck, lastScannedRemaining.isDoubled, lastScannedRemaining.isFreeTrial, lastScannedSlots, lastScannedRemaining.gameScore);
             }
         };
     }
@@ -394,7 +412,7 @@ function setupEventListeners() {
             localStorage.setItem('selectedPreset', 'custom');
             localStorage.setItem('customDeckPreset', JSON.stringify(DECK_PRESETS['custom']));
             toggleCustomDeckConfig();
-            runSolver(lastScannedRemaining.remainingDeck, lastScannedRemaining.isDoubled, lastScannedRemaining.isFreeTrial, lastScannedSlots);
+            runSolver(lastScannedRemaining.remainingDeck, lastScannedRemaining.isDoubled, lastScannedRemaining.isFreeTrial, lastScannedSlots, lastScannedRemaining.gameScore);
             log(`Custom starting deck set from scan: ${JSON.stringify(DECK_PRESETS['custom'])}`);
         } else {
             alert('Vui lòng bấm quét màn hình (F4 hoặc nút SCAN) trước khi chọn lấy bộ bài gốc!');
@@ -420,7 +438,7 @@ function setupEventListeners() {
         }
         if (lastScannedRemaining) {
             lastScannedRemaining.isFreeTrial = isFree;
-            runSolver(lastScannedRemaining.remainingDeck, lastScannedRemaining.isDoubled, isFree, lastScannedSlots);
+            runSolver(lastScannedRemaining.remainingDeck, lastScannedRemaining.isDoubled, isFree, lastScannedSlots, lastScannedRemaining.gameScore);
         } else {
             runSolver({ 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }, false, isFree, Array(5).fill(null));
         }
@@ -450,20 +468,20 @@ function setupEventListeners() {
         log('Reset Day clicked: states set to 3, 3, 2, bills set to 0');
         
         if (lastScannedRemaining) {
-            runSolver(lastScannedRemaining.remainingDeck, lastScannedRemaining.isDoubled, lastScannedRemaining.isFreeTrial, lastScannedSlots);
+            runSolver(lastScannedRemaining.remainingDeck, lastScannedRemaining.isDoubled, lastScannedRemaining.isFreeTrial, lastScannedSlots, lastScannedRemaining.gameScore);
         }
     };
 
     // Scan Buttons (Normal & HUD)
     document.getElementById('btn-scan').onclick = () => {
-        log('QUÉT GAME button clicked');
-        forceScanNow();
+        log('btn-scan clicked, toggling Live Detect');
+        const chk = document.getElementById('chk-auto-scan');
+        chk.checked = !chk.checked;
+        scanStarted = true;
+        triggerAutoScanStateChange();
     };
 
-    document.getElementById('hud-btn-scan').onclick = () => {
-        log('HUD Quét Lại button clicked');
-        forceScanNow();
-    };
+
 
     // Auto-scan checkbox & interval
     document.getElementById('chk-auto-scan').onchange = () => {
@@ -511,102 +529,314 @@ function forceScanNow() {
     updateBadgeStatus('ĐANG QUÉT...', 'scanning');
     scanStarted = true;
     
-    // Add visual glow feedback
-    const winBtnScan = document.getElementById('win-btn-scan');
-    const hudBtnScan = document.getElementById('hud-btn-scan');
-    if (winBtnScan) winBtnScan.classList.add('scanning-flash');
-    if (hudBtnScan) hudBtnScan.classList.add('scanning-flash');
-    
     if (window.electronAPI) {
         window.electronAPI.requestScreenshot();
     }
-    
-    restartAutoScanTimerIfEnabled();
 }
 
 function removeScanningFlash() {
-    const winBtnScan = document.getElementById('win-btn-scan');
-    const hudBtnScan = document.getElementById('hud-btn-scan');
-    if (winBtnScan) winBtnScan.classList.remove('scanning-flash');
-    if (hudBtnScan) hudBtnScan.classList.remove('scanning-flash');
+    // Legacy support
 }
 
 function updateAutoScanVisualState() {
-    const isAutoActive = (autoScanInterval !== null);
+    const isAutoActive = (mediaStream !== null);
     log(`updateAutoScanVisualState: isAutoActive=${isAutoActive}`);
     
     const btnScan = document.getElementById('btn-scan');
-    const winBtnScan = document.getElementById('win-btn-scan');
-    const hudBtnScan = document.getElementById('hud-btn-scan');
+    const hudLive = document.getElementById('hud-live-indicator');
     
     if (isAutoActive) {
         if (btnScan) {
             btnScan.classList.add('active-auto-scan');
             btnScan.innerHTML = `
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right: 8px;"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
-                AUTO-SCANNING (F4)
+                TẮT LIVE DETECT (F4)
             `;
         }
-        if (winBtnScan) winBtnScan.classList.add('active-auto-scan');
-        if (hudBtnScan) hudBtnScan.classList.add('active-auto-scan');
+        if (hudLive) hudLive.style.display = 'inline-flex';
     } else {
         if (btnScan) {
             btnScan.classList.remove('active-auto-scan');
             btnScan.innerHTML = `
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="margin-right: 8px;"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
-                QUÉT GAME (SCAN)
+                BẬT LIVE DETECT (F4)
             `;
         }
-        if (winBtnScan) winBtnScan.classList.remove('active-auto-scan');
-        if (hudBtnScan) hudBtnScan.classList.remove('active-auto-scan');
+        if (hudLive) hudLive.style.display = 'none';
     }
 }
 
 function triggerAutoScanStateChange() {
     const isChecked = document.getElementById('chk-auto-scan').checked;
-    log(`triggerAutoScanStateChange: checked=${isChecked}, scanStarted=${scanStarted}`);
+    log(`triggerAutoScanStateChange: checked=${isChecked}`);
     
-    if (autoScanInterval) {
-        clearInterval(autoScanInterval);
-        autoScanInterval = null;
-    }
+    stopLiveDetect();
     
     if (isChecked) {
-        if (!scanStarted) {
-            scanStarted = true;
-            if (window.electronAPI) {
-                window.electronAPI.requestScreenshot();
+        updateBadgeStatus('ĐANG KHỞI TẠO...', 'scanning');
+        startLiveDetect().then(success => {
+            if (success) {
+                updateBadgeStatus('LIVE', 'success');
+                updateAutoScanVisualState();
+            } else {
+                updateBadgeStatus('LỖI KẾT NỐI STREAM', 'error');
+                document.getElementById('chk-auto-scan').checked = false;
+                updateAutoScanVisualState();
             }
-        }
-        const seconds = parseFloat(document.getElementById('num-scan-interval').value) || 2;
-        log(`Starting auto-scan interval: ${seconds}s`);
-        autoScanInterval = setInterval(() => {
-            if (window.electronAPI) {
-                window.electronAPI.requestScreenshot();
-            }
-        }, seconds * 1000);
-        updateBadgeStatus('TỰ ĐỘNG QUÉT ĐANG BẬT', 'scanning');
+        });
     } else {
-        updateBadgeStatus('TỰ ĐỘNG QUÉT ĐÃ TẮT');
+        updateBadgeStatus('LIVE DETECT TẮT');
+        updateAutoScanVisualState();
     }
-    updateAutoScanVisualState();
 }
 
-function restartAutoScanTimerIfEnabled() {
-    const isChecked = document.getElementById('chk-auto-scan').checked;
-    if (isChecked && scanStarted) {
-        if (autoScanInterval) {
-            clearInterval(autoScanInterval);
+async function startLiveDetect(forceScreen = false) {
+    try {
+        if (!window.electronAPI || !window.electronAPI.resolveCaptureSource) {
+            log('startLiveDetect: electronAPI.resolveCaptureSource is not available.');
+            return false;
         }
-        const seconds = parseFloat(document.getElementById('num-scan-interval').value) || 2;
-        autoScanInterval = setInterval(() => {
-            if (window.electronAPI) {
-                window.electronAPI.requestScreenshot();
+        
+        log(`startLiveDetect: Resolving capture source (forceScreen=${forceScreen})...`);
+        const sourceId = await window.electronAPI.resolveCaptureSource(forceScreen);
+        if (!sourceId) {
+            log('startLiveDetect: Failed to resolve game capture source ID.');
+            return false;
+        }
+        
+        log(`startLiveDetect: Resolved source ID: ${sourceId}. Creating MediaStream...`);
+        const stream = await navigator.mediaDevices.getUserMedia({
+            audio: false,
+            video: {
+                mandatory: {
+                    chromeMediaSource: 'desktop',
+                    chromeMediaSourceId: sourceId
+                }
             }
-        }, seconds * 1000);
-        updateBadgeStatus('TỰ ĐỘNG QUÉT ĐANG BẬT', 'scanning');
+        });
+        
+        mediaStream = stream;
+        
+        streamVideo = document.createElement('video');
+        streamVideo.srcObject = stream;
+        
+        const videoTrack = stream.getVideoTracks()[0];
+        if (videoTrack) {
+            videoTrack.onended = () => {
+                log('MediaStream track ended. Reconnecting...');
+                handleStreamEnded();
+            };
+        }
+        
+        await new Promise((resolve) => {
+            streamVideo.onloadedmetadata = () => {
+                streamVideo.play();
+                resolve();
+            };
+        });
+        
+        log('startLiveDetect: MediaStream playing. Starting watch loop...');
+        scanStarted = true;
+        inTrial = true;
+        prevHashes = {};
+        isAnimating = false;
+        stableTicks = 0;
+        retryCount = 0;
+        
+        updateAutoScanVisualState();
+        scheduleNextWatchTick(90);
+        return true;
+    } catch (err) {
+        log(`startLiveDetect error: ${err.message}`);
+        if (!forceScreen) {
+            log('startLiveDetect: Failed with window source. Retrying with primary screen fallback...');
+            return await startLiveDetect(true);
+        }
+        return false;
     }
-    updateAutoScanVisualState();
+}
+
+function stopLiveDetect() {
+    log('stopLiveDetect called.');
+    if (watchTimeout) {
+        clearTimeout(watchTimeout);
+        watchTimeout = null;
+    }
+    if (mediaStream) {
+        mediaStream.getTracks().forEach(track => track.stop());
+        mediaStream = null;
+    }
+    if (streamVideo) {
+        streamVideo.pause();
+        streamVideo.srcObject = null;
+        streamVideo = null;
+    }
+    scanStarted = false;
+    removeScanningFlash();
+}
+
+function handleStreamEnded() {
+    log('handleStreamEnded: Stream track ended.');
+    const isChecked = document.getElementById('chk-auto-scan').checked;
+    stopLiveDetect();
+    if (isChecked) {
+        updateBadgeStatus('MẤT KẾT NỐI, ĐANG THỬ LẠI...', 'scanning');
+        setTimeout(async () => {
+            const stillChecked = document.getElementById('chk-auto-scan').checked;
+            if (stillChecked) {
+                const success = await startLiveDetect();
+                if (success) {
+                    updateBadgeStatus('LIVE', 'success');
+                } else {
+                    updateBadgeStatus('LỖI KẾT NỐI STREAM', 'error');
+                }
+            }
+        }, 2000);
+    }
+}
+
+function scheduleNextWatchTick(ms) {
+    if (watchTimeout) clearTimeout(watchTimeout);
+    watchTimeout = setTimeout(watchTick, ms);
+}
+
+function calculateRegionHash(imgData) {
+    const data = imgData.data;
+    let rSum = 0, gSum = 0, bSum = 0;
+    let count = 0;
+    const stride = 16;
+    for (let i = 0; i < data.length; i += stride * 4) {
+        rSum += data[i];
+        gSum += data[i+1];
+        bSum += data[i+2];
+        count++;
+    }
+    return {
+        r: Math.round(rSum / count),
+        g: Math.round(gSum / count),
+        b: Math.round(bSum / count)
+    };
+}
+
+function watchTick() {
+    if (!mediaStream || !streamVideo) return;
+    
+    const canvas = document.getElementById('proc-canvas');
+    const ctx = canvas.getContext('2d');
+    
+    const w = streamVideo.videoWidth;
+    const h = streamVideo.videoHeight;
+    if (w === 0 || h === 0) {
+        scheduleNextWatchTick(90);
+        return;
+    }
+    
+    if (canvas.width !== w || canvas.height !== h) {
+        canvas.width = w;
+        canvas.height = h;
+    }
+    
+    ctx.drawImage(streamVideo, 0, 0, w, h);
+    
+    const activeConfig = window.getActiveConfig(w, h);
+    if (!activeConfig) {
+        scheduleNextWatchTick(90);
+        return;
+    }
+    
+    if (!inTrial) {
+        // Quick bracket check
+        const brConfig = activeConfig.bracket;
+        const brPixels = ctx.getImageData(brConfig.x, brConfig.y, brConfig.width, brConfig.height);
+        let darkBr = 0;
+        for (let i = 0; i < brConfig.width * brConfig.height; i++) {
+            if ((brPixels.data[i*4] + brPixels.data[i*4+1] + brPixels.data[i*4+2]) / 3 < 110) {
+                darkBr++;
+            }
+        }
+        const minDarkBr = Math.max(5, Math.round(brConfig.width * brConfig.height * 0.074));
+        const isBracketPresent = darkBr > minDarkBr;
+
+        if (isBracketPresent) {
+            log('watchTick: Trial UI detected via bracket. Speeding up to 90ms.');
+            inTrial = true;
+            prevHashes = {};
+            isAnimating = false;
+            stableTicks = 0;
+            scheduleNextWatchTick(90);
+            return;
+        }
+
+        let deckSum = 0;
+        const imageSource = {
+            getCrop: (cx, cy, cw, ch) => ctx.getImageData(cx, cy, cw, ch).data
+        };
+        activeConfig.deckCounts.forEach((dc) => {
+            const cropPixels = imageSource.getCrop(dc.x, dc.y, dc.width, dc.height);
+            const result = classifySmallUiDigitFromCrop(cropPixels, dc.width, dc.height);
+            if (result.digit !== null) {
+                deckSum += result.digit;
+            }
+        });
+
+        if (deckSum > 10) {
+            log('watchTick: Trial UI detected via deck counts. Speeding up to 90ms.');
+            inTrial = true;
+            prevHashes = {};
+            isAnimating = false;
+            stableTicks = 0;
+            scheduleNextWatchTick(90);
+            return;
+        }
+
+        scheduleNextWatchTick(500);
+        return;
+    }
+    
+    // In Trial UI
+    let anyChange = false;
+    const currentHashes = {};
+    const regions = {
+        trialAnchor: activeConfig.trialAnchor,
+        scoreRewardBand: activeConfig.scoreRewardBand,
+        controlBand: activeConfig.controlBand,
+        deckPanel: activeConfig.deckPanel
+    };
+    
+    for (const [name, rect] of Object.entries(regions)) {
+        if (!rect) continue;
+        const imgData = ctx.getImageData(rect.x, rect.y, rect.width, rect.height);
+        const hash = calculateRegionHash(imgData);
+        currentHashes[name] = hash;
+        
+        const prev = prevHashes[name];
+        if (prev) {
+            const diff = Math.abs(hash.r - prev.r) + Math.abs(hash.g - prev.g) + Math.abs(hash.b - prev.b);
+            if (diff > 15) {
+                anyChange = true;
+            }
+        } else {
+            anyChange = true;
+        }
+    }
+    
+    prevHashes = currentHashes;
+    
+    if (anyChange) {
+        isAnimating = true;
+        stableTicks = 0;
+    } else {
+        if (isAnimating) {
+            stableTicks++;
+            if (stableTicks >= 2) {
+                isAnimating = false;
+                log('watchTick: UI stabilized. Triggering scan...');
+                triggerLiveScan(ctx, w, h);
+            }
+        }
+    }
+    
+    scheduleNextWatchTick(90);
 }
 
 function updateAccumulatedBillsUI() {
@@ -696,7 +926,7 @@ function updateStepper(type, delta) {
     syncStepperUI();
     
     if (lastScannedRemaining) {
-        runSolver(lastScannedRemaining.remainingDeck, lastScannedRemaining.isDoubled, lastScannedRemaining.isFreeTrial, lastScannedSlots);
+        runSolver(lastScannedRemaining.remainingDeck, lastScannedRemaining.isDoubled, lastScannedRemaining.isFreeTrial, lastScannedSlots, lastScannedRemaining.gameScore);
     }
 }
 
@@ -716,15 +946,6 @@ function getCropBuffer(ctx, x, y, w, h) {
     return ctx.getImageData(x, y, w, h).data; // Uint8ClampedArray of size w * h * 4
 }
 
-// Bounded BFS Digit Classifier for attempts/doubles counts
-function scanDigitInRegion(ctx, xStart, yStart, xEnd, yEnd) {
-    const w = xEnd - xStart;
-    const h = yEnd - yStart;
-    const cropPixels = ctx.getImageData(xStart, yStart, w, h).data;
-    const result = classifySmallUiDigitFromCrop(cropPixels, w, h);
-    return result.digit; // Trả về chữ số nhận diện hoặc null
-}
-
 function processRawScreenshot(width, height, buffer) {
     const canvas = document.getElementById('proc-canvas');
     const ctx = canvas.getContext('2d');
@@ -737,7 +958,31 @@ function processRawScreenshot(width, height, buffer) {
     ctx.putImageData(imageData, 0, 0);
     
     log(`Raw screenshot loaded. Dims: ${width}x${height}`);
-    analyzeCanvas(ctx, width, height);
+    
+    const activeConfig = window.getActiveConfig(width, height);
+    if (!activeConfig) return;
+    
+    const imageSource = {
+        getCrop: (x, y, w, h) => ctx.getImageData(x, y, w, h).data
+    };
+    
+    const state = window.scanFullState(imageSource, activeConfig);
+    const validation = validateScanState(state);
+    
+    if (validation.status === 'inactive') {
+        log('processRawScreenshot: UI determined to be inactive.');
+        inTrial = false;
+        updateBadgeStatus('SẴN SÀNG (F4)');
+        return;
+    }
+    
+    if (validation.status === 'retry') {
+        log(`processRawScreenshot: Validation failed (status: retry). Keeping previous state. Warnings: ${validation.warnings.join(', ')}`);
+        updateBadgeStatus('OCR CHƯA CHẮC', 'scanning');
+        return;
+    }
+    
+    commitScanState(state, validation.status === 'warning' ? validation.warnings : null);
 }
 
 function processScreenshot(dataUrl) {
@@ -752,328 +997,272 @@ function processScreenshot(dataUrl) {
         ctx.drawImage(img, 0, 0);
         
         log(`File/Data URL screenshot loaded. Dims: ${img.width}x${img.height}`);
-        analyzeCanvas(ctx, img.width, img.height);
-    };
-}
-// Card digit classification helper functions are now loaded from ocr.js
-
-
-function isFaceCardSlot(ctx, cardPos, activeConfig) {
-    // Face cards have a dark "ACCESS POINT" strip immediately left of the BP digit.
-    // Empty/card-back slots keep this area as pale cyan/white and should not be OCR'ed.
-    const rel = activeConfig.cardFaceStripRelative || { xOffset: 0, yOffset: 10, width: 300, height: 50 };
-    const stripX = cardPos.x + rel.xOffset;
-    const stripY = cardPos.y + rel.yOffset;
-    const stripW = rel.width;
-    const stripH = rel.height;
-    const pixels = getCropBuffer(ctx, stripX, stripY, stripW, stripH);
-    let stripPixels = 0;
-
-    for (let i = 0; i < stripW * stripH; i++) {
-        const idx = i * 4;
-        const val = (pixels[idx] + pixels[idx + 1] + pixels[idx + 2]) / 3;
-        if (val < 85) {
-            stripPixels++;
-        }
-    }
-
-    const minStripPixels = Math.max(10, Math.round(stripW * stripH * 0.00533));
-    return { isFace: stripPixels > minStripPixels, stripPixels };
-}
-
-function scanHandFromSlots(ctx, activeConfig) {
-    const scannedSlots = Array(5).fill(null);
-    if (!activeConfig || !activeConfig.cards) return scannedSlots;
-    
-    activeConfig.cards.forEach((cardPos, cardIdx) => {
-        const faceCheck = isFaceCardSlot(ctx, cardPos, activeConfig);
-        if (!faceCheck.isFace) {
-            log(`Slot ${cardIdx + 1} OCR: skipped card-back/empty accessStrip=${faceCheck.stripPixels}`);
+        
+        const activeConfig = window.getActiveConfig(img.width, img.height);
+        if (!activeConfig) return;
+        
+        const imageSource = {
+            getCrop: (x, y, w, h) => ctx.getImageData(x, y, w, h).data
+        };
+        
+        const state = window.scanFullState(imageSource, activeConfig);
+        const validation = validateScanState(state);
+        
+        if (validation.status === 'inactive') {
+            log('processScreenshot: UI determined to be inactive.');
+            inTrial = false;
+            updateBadgeStatus('SẴN SÀNG (F4)');
+            removeScanningFlash();
             return;
         }
-
-        const cropX = cardPos.x + activeConfig.cardNumberRelative.xOffset;
-        const cropY = cardPos.y + activeConfig.cardNumberRelative.yOffset;
-        const cropW = activeConfig.cardNumberRelative.width;
-        const cropH = activeConfig.cardNumberRelative.height;
-
-        const cropPixels = getCropBuffer(ctx, cropX, cropY, cropW, cropH);
-        const result = classifyCardDigitFromCrop(cropPixels, cropW, cropH);
-
-        if (result.digit !== null) {
-            scannedSlots[cardIdx] = result.digit;
-        }
-
-        const bbox = result.w ? `bbox=(${result.minX},${result.minY})-(${result.maxX},${result.maxY}) w=${result.w} h=${result.h}` : 'bbox=n/a';
-        const scoresStr = result.scores ? ` scores={${Object.entries(result.scores).map(([d, s]) => `${d}:${s}`).join(',')}}` : '';
-        const metrics = result.confidence !== undefined ? ` conf=${result.confidence.toFixed(2)} margin=${result.margin.toFixed(2)} thresh=${result.threshold}${result.adaptive ? '(adapt)' : ''}` : '';
         
-        log(`Slot ${cardIdx + 1} OCR: ${result.digit === null ? 'miss' : result.digit} dark=${result.darkPixels || 0} ${bbox}${scoresStr}${metrics}${result.reason ? ` reason=${result.reason}` : ''}`);
-    });
-    return scannedSlots;
-}
-
-function normalizeScannedSlots(scannedSlots) {
-    const slots = Array(5).fill(null);
-    if (!Array.isArray(scannedSlots)) return slots;
-
-    if (scannedSlots.length === 5) {
-        scannedSlots.forEach((card, idx) => {
-            slots[idx] = card >= 1 && card <= 5 ? card : null;
-        });
-        return slots;
-    }
-
-    scannedSlots.slice(0, 5).forEach((card, idx) => {
-        slots[idx] = card >= 1 && card <= 5 ? card : null;
-    });
-    return slots;
-}
-
-function compactSlots(scannedSlots) {
-    return normalizeScannedSlots(scannedSlots).filter(card => card !== null);
-}
-
-function countCards(cards) {
-    const counts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-    cards.forEach(card => {
-        if (card >= 1 && card <= 5) {
-            counts[card]++;
+        if (validation.status === 'retry') {
+            log(`processScreenshot: Validation failed (status: retry). Keeping previous state. Warnings: ${validation.warnings.join(', ')}`);
+            updateBadgeStatus('OCR CHƯA CHẮC', 'scanning');
+            removeScanningFlash();
+            return;
         }
-    });
-    return counts;
+        
+        commitScanState(state, validation.status === 'warning' ? validation.warnings : null);
+        
+        removeScanningFlash();
+    };
 }
 
-function buildEffectiveDeck(remainingDeck, hand) {
-    const handCounts = countCards(hand);
-    const effectiveDeck = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-    for (let bp = 1; bp <= 5; bp++) {
-        effectiveDeck[bp] = (remainingDeck[bp] || 0) + (handCounts[bp] || 0);
-    }
-    return effectiveDeck;
+function triggerLiveScan(ctx, w, h) {
+    retryCount = 0;
+    runScanPipeline(ctx, w, h);
 }
 
-function reconcileHandSlots(scannedSlots, deducedHand) {
-    const slots = normalizeScannedSlots(scannedSlots);
-    const pool = [...deducedHand];
-    const resolvedSlots = Array(5).fill(null);
-
-    slots.forEach((card, idx) => {
-        if (card === null) return;
-        const poolIdx = pool.indexOf(card);
-        if (poolIdx !== -1) {
-            resolvedSlots[idx] = card;
-            pool.splice(poolIdx, 1);
-        } else {
-            log(`Slot reconcile warning: OCR card ${card} at slot ${idx + 1} not found in deduced hand [${deducedHand.join(', ')}]; treating slot as empty.`);
-        }
-    });
-
-    for (let idx = 0; idx < resolvedSlots.length && pool.length > 0; idx++) {
-        if (resolvedSlots[idx] === null) {
-            resolvedSlots[idx] = pool.shift();
-        }
-    }
-
-    if (pool.length > 0) {
-        resolvedSlots.push(...pool);
-    }
-
-    return resolvedSlots.filter(card => card !== null);
-}
-
-function analyzeCanvas(ctx, width, height) {
+function runScanPipeline(ctx, w, h) {
     try {
-        const activeConfig = window.getActiveConfig(width, height);
-        const deckCounts = activeConfig.deckCounts;
-        const doubleSwitch = activeConfig.doubleSwitch;
-
-        const remainingDeck = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-
-        // 1. Scan remaining deck counts in right panel (optimized crops)
-        deckCounts.forEach((dc, idx) => {
-            const cropW = dc.width;
-            const cropH = dc.height;
-            const cropX = dc.x;
-            const cropY = dc.y;
-
-            const cropPixels = getCropBuffer(ctx, cropX, cropY, cropW, cropH);
-            const result = classifySmallUiDigitFromCrop(cropPixels, cropW, cropH);
-            remainingDeck[idx+1] = result.digit !== null ? result.digit : 0;
-        });
-
-        log(`Scanned Deck: [${Object.values(remainingDeck).join(', ')}]`);
-
-        // Scan the 5 card slots to know the exact draw order!
-        const scannedSlots = scanHandFromSlots(ctx, activeConfig);
-        lastScannedSlots = scannedSlots;
-        log(`Scanned Slots Raw: ${formatSlots(scannedSlots)}`);
-
-        // 2. Scan Double active switch box (count bright pixels)
-        const dsPixels = getCropBuffer(ctx, doubleSwitch.x, doubleSwitch.y, doubleSwitch.width, doubleSwitch.height);
-        let whitePixels = 0;
-        for (let i = 0; i < doubleSwitch.width * doubleSwitch.height; i++) {
-            if (dsPixels[i*4] > 220 && dsPixels[i*4+1] > 220 && dsPixels[i*4+2] > 220) {
-                whitePixels++;
-            }
-        }
-        const isDoubled = whitePixels > Math.max(20, Math.round(doubleSwitch.width * doubleSwitch.height * 0.026)); // 200 out of 7500 is ~2.6%
-        log(`Double active state: ${isDoubled} (${whitePixels} white pixels)`);
-
-        // Detect capsule elements presence to identify mode
-        const capConfig = activeConfig.doubleSwitchCapsule;
-        const capPixels = getCropBuffer(ctx, capConfig.x, capConfig.y, capConfig.width, capConfig.height);
-        let darkCap = 0;
-        for (let i = 0; i < capConfig.width * capConfig.height; i++) {
-            if ((capPixels[i*4] + capPixels[i*4+1] + capPixels[i*4+2]) / 3 < 110) {
-                darkCap++;
-            }
-        }
-        const minDarkCap = Math.max(10, Math.round(capConfig.width * capConfig.height * 0.0083));
-        const isDoubleSwitchPresent = darkCap > minDarkCap;
-
-        const brConfig = activeConfig.bracket;
-        const brPixels = getCropBuffer(ctx, brConfig.x, brConfig.y, brConfig.width, brConfig.height);
-        let darkBr = 0;
-        for (let i = 0; i < brConfig.width * brConfig.height; i++) {
-            if ((brPixels[i*4] + brPixels[i*4+1] + brPixels[i*4+2]) / 3 < 110) {
-                darkBr++;
-            }
-        }
-        const minDarkBr = Math.max(5, Math.round(brConfig.width * brConfig.height * 0.074));
-        const isBracketPresent = darkBr > minDarkBr;
-
-        // Determine if Free Trial Mode is active from visual elements
-        let isFreeTrial = false;
-        const manualFreeTrial = document.getElementById('chk-free-trial').checked;
-        if (manualFreeTrial) {
-            isFreeTrial = true;
-        } else {
-            const hasDouble = isDoubleSwitchPresent || isDoubled;
-            if (!hasDouble || !isBracketPresent) {
-                isFreeTrial = true;
+        const activeConfig = window.getActiveConfig(w, h);
+        if (!activeConfig) return;
+        
+        const imageSource = {
+            getCrop: (x, y, w, h) => ctx.getImageData(x, y, w, h).data
+        };
+        
+        const state = window.scanFullState(imageSource, activeConfig);
+        const validation = validateScanState(state);
+        
+        if (validation.status === 'retry') {
+            if (retryCount < 3) {
+                retryCount++;
+                log(`runScanPipeline: Validation failed (retry ${retryCount}/3). Warnings: ${validation.warnings.join(', ')}`);
+                updateBadgeStatus(`ĐANG XÁC MINH ${retryCount}/3...`, 'scanning');
+                setTimeout(() => {
+                    if (!mediaStream || !streamVideo) return;
+                    const canvas = document.getElementById('proc-canvas');
+                    const cleanCtx = canvas.getContext('2d');
+                    cleanCtx.drawImage(streamVideo, 0, 0, w, h);
+                    runScanPipeline(cleanCtx, w, h);
+                }, 100);
+                return;
+            } else {
+                log(`runScanPipeline: Validation failed after 3 retries. Keeping previous state. Warnings: ${validation.warnings.join(', ')}`);
+                updateBadgeStatus('OCR CHƯA CHẮC', 'scanning');
+                return;
             }
         }
         
-        // Switch state & UI to target mode
-        switchMode(isFreeTrial ? 'FREE_TRIAL' : 'REWARDED');
-        log(`Mode detected: ${isFreeTrial ? 'FREE TRIAL' : 'REWARDED'} (DoublePresent=${isDoubleSwitchPresent}, BracketPresent=${isBracketPresent})`);
-
-        // If in Free Trial mode and hand is empty, reset to defaults
-        if (isFreeTrial && scannedSlots.every(card => card === null)) {
-            attemptsLeft = 1;
-            freeAbandonsLeft = 0;
-            doublesLeft = 0;
-            localStorage.setItem('attemptsLeft', attemptsLeft);
-            localStorage.setItem('freeAbandonsLeft', freeAbandonsLeft);
-            localStorage.setItem('doublesLeft', doublesLeft);
-            localStorage.setItem('freeTrialAttemptsLeft', attemptsLeft);
-            localStorage.setItem('freeTrialFreeAbandonsLeft', freeAbandonsLeft);
-            localStorage.setItem('freeTrialDoublesLeft', doublesLeft);
-            syncStepperUI();
-            log(`Free Trial round start: Reset steppers to 1 attempt, 0 abandons, 0 doubles.`);
+        if (validation.status === 'inactive') {
+            log('runScanPipeline: UI determined to be inactive.');
+            inTrial = false;
+            updateBadgeStatus('SẴN SÀNG (F4)');
+            return;
         }
+        
+        commitScanState(state, validation.status === 'warning' ? validation.warnings : null);
+        
+    } catch (err) {
+        log(`Error in runScanPipeline: ${err.stack || err.message}`);
+        updateBadgeStatus('LỖI QUÉT', 'error');
+    }
+}
 
-        // 3. Scan Remaining attempts & doubles counts if in rewarded mode
-        if (!isFreeTrial) {
-            // Attempts Count
-            const attReg = activeConfig.attemptsRegion;
-            const scannedAttempts = scanDigitInRegion(ctx, attReg.xStart, attReg.yStart, attReg.xEnd, attReg.yEnd);
-            if (scannedAttempts !== null && scannedAttempts >= 0 && scannedAttempts <= 3) {
-                attemptsLeft = scannedAttempts;
-                localStorage.setItem('attemptsLeft', attemptsLeft);
-                localStorage.setItem('rewardedAttemptsLeft', attemptsLeft);
-                log(`OCR Detected Attempts remaining: ${attemptsLeft}`);
-                if (attemptsLeft === 0) {
-                    switchMode('FREE_TRIAL');
+function validateScanState(state) {
+    const warnings = [];
+    const deckSum = Object.values(state.remainingDeck).reduce((a, b) => a + b, 0);
+    const rawHand = state.scannedSlots.filter(v => v !== null);
+    
+    const totalScannedCards = deckSum + rawHand.length;
+    if (!state.isBracketPresent && totalScannedCards < 15) {
+        return { status: 'inactive', warnings: ['Outside Trial UI (low card count)'] };
+    }
+    
+    for (let i = 0; i < 5; i++) {
+        const det = state.slotDetections[i];
+        if (det && det.digit === null && det.darkPixels !== undefined) {
+            warnings.push(`Slot ${i+1}: Có lá bài nhưng nhận dạng chữ số thất bại.`);
+        }
+    }
+    
+    // Mốc đối chiếu xuất phát: Ưu tiên bộ bài tự động nhận diện tin cậy cao,
+    // nếu chưa có thì dùng bộ bài của Preset được chọn trên giao diện UI
+    const startingDeck = (currentRoundState.isActive && currentRoundState.isHighTrust)
+        ? currentRoundState.estimatedStartingDeck
+        : DECK_PRESETS[selectedPreset];
+        
+    const deducedHand = [];
+    if (startingDeck) {
+        for (let bp = 1; bp <= 5; bp++) {
+            const diff = startingDeck[bp] - state.remainingDeck[bp];
+            if (diff >= 0) {
+                for (let i = 0; i < diff; i++) {
+                    deducedHand.push(bp);
                 }
             }
-
-            // Doubles Count
-            if (isDoubleSwitchPresent) {
-                const dblReg = activeConfig.doublesRegion;
-                const scannedDoubles = scanDigitInRegion(ctx, dblReg.xStart, dblReg.yStart, dblReg.xEnd, dblReg.yEnd);
-                if (scannedDoubles !== null && scannedDoubles >= 0 && scannedDoubles <= 2) {
-                    doublesLeft = scannedDoubles;
-                    localStorage.setItem('doublesLeft', doublesLeft);
-                    localStorage.setItem('rewardedDoublesLeft', doublesLeft);
-                    log(`OCR Detected Doubles remaining: ${doublesLeft}`);
-                }
-            }
-            syncStepperUI();
         }
+    }
+    
+    const useDeduced = shouldUseDeducedHand(startingDeck, state.remainingDeck, rawHand, state.gameScore);
+    const hand = useDeduced
+        ? reconcileHandSlots(state.scannedSlots, deducedHand)
+        : rawHand;
+        
+    if (useDeduced) {
+        log(`validateScanState: Using reconciled hand [${hand.join(', ')}] based on deduced hand [${deducedHand.join(', ')}]`);
+    }
+    
+    if (startingDeck) {
+        const totalStarting = Object.values(startingDeck).reduce((a, b) => a + b, 0);
+        const handCounts = countCards(hand);
+        let sumMismatch = false;
+        
+        // 1. Kiểm tra xem số lượng từng loại bài quét được có vượt quá số lượng ban đầu của preset không
+        for (let bp = 1; bp <= 5; bp++) {
+            const currentTotal = (state.remainingDeck[bp] || 0) + (handCounts[bp] || 0);
+            if (currentTotal > startingDeck[bp]) {
+                warnings.push(`Lá ${bp} BP: Tổng quét ${currentTotal} vượt quá số lượng ban đầu ${startingDeck[bp]} của preset.`);
+                sumMismatch = true;
+            }
+        }
+        
+        // 2. Kiểm tra tổng số bài quét được có khớp với tổng số bài của preset không
+        const currentSum = deckSum + hand.length;
+        if (currentSum !== totalStarting) {
+            warnings.push(`Tổng số lá bài lệch: Quét được ${currentSum}, Preset yêu cầu ${totalStarting}.`);
+            sumMismatch = true;
+        }
+        
+        if (sumMismatch) {
+            return { status: 'retry', warnings };
+        }
+    }
+    
+    // 3. Kiểm tra chéo giữa điểm tự tính từ bài trên tay và điểm quét được từ game
+    if (state.gameScore !== null && state.gameScore !== undefined) {
+        const calculatedScore = hand.reduce((acc, val) => acc + val, 0) % 11;
+        if (calculatedScore !== state.gameScore) {
+            warnings.push(`Điểm số lệch: Tự tính ${calculatedScore}, Quét trên game ${state.gameScore}.`);
+            return { status: 'retry', warnings };
+        }
+    }
+    
+    if (warnings.length > 0) {
+        return { status: 'warning', warnings };
+    }
+    
+    return { status: 'accepted', warnings };
+}
 
-        // Detect round reset and handle free abandons & accumulated rewards statefully
-        if (lastScannedRemaining) {
-            const prevSum = Object.values(lastScannedRemaining.remainingDeck).reduce((a, b) => a + b, 0);
-            const currSum = Object.values(remainingDeck).reduce((a, b) => a + b, 0);
-            const startingDeck = DECK_PRESETS[selectedPreset];
-            const startingSum = Object.values(startingDeck).reduce((a, b) => a + b, 0);
-            
-            // Reset to full deck (e.g. deck size increases)
-            if (prevSum < startingSum && currSum > prevSum) {
-                log(`Round reset detected in game. Remaining deck restored. prevSum: ${prevSum}, currSum: ${currSum}`);
-                if (isFreeTrial) {
-                    attemptsLeft = 1;
-                    freeAbandonsLeft = 0;
-                    doublesLeft = 0;
-                    localStorage.setItem('attemptsLeft', 1);
-                    localStorage.setItem('freeAbandonsLeft', 0);
-                    localStorage.setItem('doublesLeft', 0);
-                    localStorage.setItem('freeTrialAttemptsLeft', 1);
-                    localStorage.setItem('freeTrialFreeAbandonsLeft', 0);
-                    localStorage.setItem('freeTrialDoublesLeft', 0);
+function commitScanState(state, warnings) {
+    switchMode(state.isFreeTrial ? 'FREE_TRIAL' : 'REWARDED');
+    
+    if (state.isFreeTrial && state.scannedSlots.every(card => card === null)) {
+        attemptsLeft = 1;
+        freeAbandonsLeft = 0;
+        doublesLeft = 0;
+        localStorage.setItem('attemptsLeft', attemptsLeft);
+        localStorage.setItem('freeAbandonsLeft', freeAbandonsLeft);
+        localStorage.setItem('doublesLeft', doublesLeft);
+        localStorage.setItem('freeTrialAttemptsLeft', attemptsLeft);
+        localStorage.setItem('freeTrialFreeAbandonsLeft', freeAbandonsLeft);
+        localStorage.setItem('freeTrialDoublesLeft', doublesLeft);
+        syncStepperUI();
+        log('commitScanState: Free Trial round start detected, reset steppers.');
+    }
+    
+    if (!state.isFreeTrial) {
+        attemptsLeft = state.attemptsLeft;
+        doublesLeft = state.doublesLeft;
+        localStorage.setItem('attemptsLeft', attemptsLeft);
+        localStorage.setItem('rewardedAttemptsLeft', attemptsLeft);
+        localStorage.setItem('doublesLeft', doublesLeft);
+        localStorage.setItem('rewardedDoublesLeft', doublesLeft);
+        syncStepperUI();
+    }
+    
+    if (lastScannedRemaining) {
+        const prevSum = Object.values(lastScannedRemaining.remainingDeck).reduce((a, b) => a + b, 0);
+        const currSum = Object.values(state.remainingDeck).reduce((a, b) => a + b, 0);
+        const startingDeck = DECK_PRESETS[selectedPreset];
+        const startingSum = Object.values(startingDeck).reduce((a, b) => a + b, 0);
+        
+        if (prevSum < startingSum && currSum > prevSum) {
+            log(`commitScanState: Round reset detected. prevSum: ${prevSum}, currSum: ${currSum}`);
+            if (state.isFreeTrial) {
+                attemptsLeft = 1;
+                freeAbandonsLeft = 0;
+                doublesLeft = 0;
+                localStorage.setItem('attemptsLeft', 1);
+                localStorage.setItem('freeAbandonsLeft', 0);
+                localStorage.setItem('doublesLeft', 0);
+                localStorage.setItem('freeTrialAttemptsLeft', 1);
+                localStorage.setItem('freeTrialFreeAbandonsLeft', 0);
+                localStorage.setItem('freeTrialDoublesLeft', 0);
+                syncStepperUI();
+            } else {
+                const prevAttempts = lastScannedRemaining.attemptsLeft;
+                const currAttempts = state.attemptsLeft;
+                if (prevAttempts !== null && currAttempts !== null && currAttempts >= prevAttempts) {
+                    log('commitScanState: Attempts did not decrease, counting as ABANDON.');
+                    freeAbandonsLeft = Math.max(0, freeAbandonsLeft - 1);
+                    localStorage.setItem('freeAbandonsLeft', freeAbandonsLeft);
+                    localStorage.setItem('rewardedFreeAbandonsLeft', freeAbandonsLeft);
                     syncStepperUI();
-                    log(`Free Trial round reset: Reset steppers to 1 attempt, 0 abandons, 0 doubles.`);
                 } else {
-                    const prevAttempts = lastScannedRemaining.attemptsLeft;
-                    const currAttempts = attemptsLeft;
-                    if (prevAttempts !== null && currAttempts !== null && currAttempts >= prevAttempts) {
-                        log(`Attempts did not decrease on deck reset (Prev: ${prevAttempts}, Curr: ${currAttempts}). Counting as an ABANDON.`);
-                        freeAbandonsLeft = Math.max(0, freeAbandonsLeft - 1);
-                        localStorage.setItem('freeAbandonsLeft', freeAbandonsLeft);
-                        localStorage.setItem('rewardedFreeAbandonsLeft', freeAbandonsLeft);
-                        syncStepperUI();
-                    } else {
-                        log(`Attempts decreased or status unclear (Prev: ${prevAttempts}, Curr: ${currAttempts}). Normal round completion.`);
-                        // CALCULATE REWARD OF PREVIOUS HAND!
-                        if (lastScannedHand && lastScannedHand.length > 0) {
-                            const sumHand = lastScannedHand.reduce((acc, val) => acc + val, 0);
-                            const scoreHand = sumHand % 11;
-                            const levelRewards = REWARDS[activeConfig.level || 4] || REWARDS[4];
-                            const reward = levelRewards[scoreHand] || 0;
-                            const prevIsDoubled = lastScannedRemaining.isDoubled;
-                            const roundReward = reward * (prevIsDoubled ? 2 : 1);
-                            
-                            accumulatedBills += roundReward;
-                            localStorage.setItem('accumulatedBills', accumulatedBills);
-                            updateAccumulatedBillsUI();
-                            log(`Accumulated Reward added: ${roundReward} Bills (Hand: ${lastScannedHand.join(',')}, Score: ${scoreHand}, Doubled: ${prevIsDoubled}). Total: ${accumulatedBills}`);
-                        }
+                    log('commitScanState: Normal round completion. Adding rewards.');
+                    if (lastScannedHand && lastScannedHand.length > 0) {
+                        const sumHand = lastScannedHand.reduce((acc, val) => acc + val, 0);
+                        const scoreHand = sumHand % 11;
+                        const levelRewards = REWARDS[4];
+                        const reward = levelRewards[scoreHand] || 0;
+                        const prevIsDoubled = lastScannedRemaining.isDoubled;
+                        const roundReward = reward * (prevIsDoubled ? 2 : 1);
+                        
+                        accumulatedBills += roundReward;
+                        localStorage.setItem('accumulatedBills', accumulatedBills);
+                        updateAccumulatedBillsUI();
                     }
                 }
             }
         }
-
-        lastScannedRemaining = { remainingDeck, isDoubled, isFreeTrial, attemptsLeft };
-        updateBadgeStatus('QUÉT THÀNH CÔNG', 'success');
-        
-        const scanTime = new Date().toLocaleTimeString();
-        document.getElementById('scan-meta').innerText = `Quét xong lúc ${scanTime}. Nhân đôi: ${isDoubled ? 'BẬT' : 'TẮT'}`;
-
-        runSolver(remainingDeck, isDoubled, isFreeTrial, scannedSlots);
-
-        // Remove scanning glow
-        removeScanningFlash();
-
-    } catch (err) {
-        log(`Error analyzing canvas: ${err.stack || err.message}`);
-        updateBadgeStatus('LỖI QUÉT', 'error');
-        removeScanningFlash();
     }
+    
+    lastScannedRemaining = { 
+        remainingDeck: state.remainingDeck, 
+        isDoubled: state.isDoubled, 
+        isFreeTrial: state.isFreeTrial, 
+        attemptsLeft: state.attemptsLeft,
+        gameScore: state.gameScore
+    };
+    
+    if (warnings) {
+        log(`commitScanState completed with warning: ${warnings.join(', ')}`);
+        updateBadgeStatus('OCR CHƯA CHẮC', 'scanning');
+    } else {
+        updateBadgeStatus('LIVE', 'success');
+    }
+    
+    const scanTime = new Date().toLocaleTimeString();
+    document.getElementById('scan-meta').innerText = `Cập nhật lúc ${scanTime}. Nhân đôi: ${state.isDoubled ? 'BẬT' : 'TẮT'}`;
+    
+    runSolver(state.remainingDeck, state.isDoubled, state.isFreeTrial, state.scannedSlots, state.gameScore);
 }
 
-function runSolver(remainingDeck, isDoubled, isFreeTrial, scannedSlots) {
+function runSolver(remainingDeck, isDoubled, isFreeTrial, scannedSlots, gameScore = null) {
     const activeConfig = window.getActiveConfig();
     const normalizedSlots = normalizeScannedSlots(scannedSlots);
     const scannedHand = compactSlots(normalizedSlots);
@@ -1234,10 +1423,7 @@ function runSolver(remainingDeck, isDoubled, isFreeTrial, scannedSlots) {
     lastScannedSlots = normalizedSlots;
     log(`Deduced Hand: [${deducedHand.join(', ')}]`);
     
-    const canUseDeducedHand = !DEBUG_SLOT_OCR_ONLY && currentRoundState.isHighTrust && !hasNegativeError && (
-        scannedHand.length === 0 ||
-        deducedHand.length >= scannedHand.length
-    );
+    const canUseDeducedHand = shouldUseDeducedHand(startingDeck, remainingDeck, scannedHand, gameScore);
     
     const hand = canUseDeducedHand
         ? reconcileHandSlots(normalizedSlots, deducedHand)
@@ -1352,22 +1538,42 @@ function runSolver(remainingDeck, isDoubled, isFreeTrial, scannedSlots) {
 
     document.getElementById('hud-action-val').innerText = ACTION_LABELS[advice.action];
 
-    // Expected Value (EV) as requested by user replacing expected reward
+    // Calculate baseline S for Net EV
+    const S = solveAttempts > 0 ? solver.solve(solveAttempts - 1, solveAbandons, solveDoubles, [], false) : 0;
+
+    // Expected Value (EV) as requested by user replacing expected reward (Total EV)
     const evValue = Math.round(advice.ev).toLocaleString() + ' Bills';
     document.getElementById('stat-reward').innerText = evValue;
     document.getElementById('hud-reward-val').innerText = evValue;
 
     // Ev details normal UI
-    document.getElementById('ev-val-state').innerText = evValue;
-    document.getElementById('ev-val-draw').innerText = advice.details.evDraw !== null ? Math.round(advice.details.evDraw).toLocaleString() + ' Bills' : '-';
-    document.getElementById('ev-val-stop').innerText = advice.details.evStop !== null ? Math.round(advice.details.evStop).toLocaleString() + ' Bills' : '-';
-    document.getElementById('ev-val-abandon').innerText = advice.details.evAbandon !== null ? Math.round(advice.details.evAbandon).toLocaleString() + ' Bills' : '-';
+    document.getElementById('ev-val-draw').innerText = advice.details.evDraw !== null ? Math.round(advice.details.evDraw - S).toLocaleString() + ' Bills' : '-';
+    document.getElementById('ev-val-stop').innerText = advice.details.evStop !== null ? Math.round(advice.details.evStop - S).toLocaleString() + ' Bills' : '-';
+    document.getElementById('ev-val-abandon').innerText = advice.details.evAbandon !== null ? Math.round(advice.details.evAbandon - S).toLocaleString() + ' Bills' : '-';
 
     // Ev details HUD UI
-    document.getElementById('hud-ev-val-state').innerText = evValue;
-    document.getElementById('hud-ev-val-draw').innerText = advice.details.evDraw !== null ? Math.round(advice.details.evDraw).toLocaleString() + ' Bills' : '-';
-    document.getElementById('hud-ev-val-stop').innerText = advice.details.evStop !== null ? Math.round(advice.details.evStop).toLocaleString() + ' Bills' : '-';
-    document.getElementById('hud-ev-val-abandon').innerText = advice.details.evAbandon !== null ? Math.round(advice.details.evAbandon).toLocaleString() + ' Bills' : '-';
+    document.getElementById('hud-ev-val-draw').innerText = advice.details.evDraw !== null ? Math.round(advice.details.evDraw - S).toLocaleString() + ' Bills' : '-';
+    document.getElementById('hud-ev-val-stop').innerText = advice.details.evStop !== null ? Math.round(advice.details.evStop - S).toLocaleString() + ' Bills' : '-';
+    document.getElementById('hud-ev-val-abandon').innerText = advice.details.evAbandon !== null ? Math.round(advice.details.evAbandon - S).toLocaleString() + ' Bills' : '-';
+
+    // Render Double EV values (always visible)
+    const isDoubleAvailable = (hand.length >= 1 && hand.length <= 2 && !isDoubled && solveDoubles > 0);
+    const doubleRow = document.getElementById('ev-row-double');
+    const doubleVal = document.getElementById('ev-val-double');
+    const hudDoubleVal = document.getElementById('hud-ev-val-double');
+    
+    const evDoubleStr = (isDoubleAvailable && advice.details.evDouble !== null && advice.details.evDouble !== undefined)
+        ? Math.round(advice.details.evDouble - S).toLocaleString() + ' Bills'
+        : '-';
+        
+    if (doubleVal) doubleVal.innerText = evDoubleStr;
+    if (hudDoubleVal) hudDoubleVal.innerText = evDoubleStr;
+
+    // Set highlights for normal UI rows
+    document.getElementById('ev-row-draw').className = 'ev-row' + (advice.action === 'Draw' ? ' best-action' : '');
+    document.getElementById('ev-row-stop').className = 'ev-row' + (advice.action === 'Stop' ? ' best-action stop-action' : '');
+    document.getElementById('ev-row-abandon').className = 'ev-row' + (advice.action === 'Abandon' ? ' best-action abandon-action' : '');
+    if (doubleRow) doubleRow.className = 'ev-row' + (advice.action === 'Double' ? ' best-action' : '');
 
     // Remaining probabilities normal UI
     const probList = document.getElementById('prob-list');
@@ -1461,4 +1667,106 @@ function renderHandCards(hand) {
         }
         handContainer.appendChild(cardDiv);
     }
+}
+
+// Helper functions for OCR and Solver handoff logic
+
+function normalizeScannedSlots(slots) {
+    if (!slots || !Array.isArray(slots)) return Array(5).fill(null);
+    return slots.map(v => (typeof v === 'number' && v >= 1 && v <= 5) ? v : null);
+}
+
+function compactSlots(slots) {
+    if (!slots) return [];
+    return slots.filter(v => v !== null && v !== undefined);
+}
+
+function countCards(hand) {
+    const counts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    if (hand && Array.isArray(hand)) {
+        hand.forEach(v => {
+            if (v >= 1 && v <= 5) {
+                counts[v]++;
+            }
+        });
+    }
+    return counts;
+}
+
+function shouldUseDeducedHand(startingDeck, remainingDeck, scannedHand, gameScore) {
+    if (DEBUG_SLOT_OCR_ONLY) return false;
+    
+    const isTrustworthy = currentRoundState.isHighTrust || (selectedPreset && selectedPreset !== 'custom');
+    if (!isTrustworthy) return false;
+    if (!startingDeck) return false;
+    
+    // Check for negative error
+    let hasNegativeError = false;
+    const deducedHand = [];
+    for (let bp = 1; bp <= 5; bp++) {
+        const diff = startingDeck[bp] - remainingDeck[bp];
+        if (diff < 0) {
+            hasNegativeError = true;
+        } else {
+            for (let i = 0; i < diff; i++) {
+                deducedHand.push(bp);
+            }
+        }
+    }
+    
+    if (hasNegativeError) return false;
+    
+    if (gameScore !== null && gameScore !== undefined) {
+        const deducedScore = deducedHand.reduce((a, b) => a + b, 0) % 11;
+        const scannedScore = scannedHand.reduce((a, b) => a + b, 0) % 11;
+        
+        if (deducedScore === gameScore) {
+            return true;
+        } else if (scannedScore === gameScore) {
+            return false;
+        }
+    }
+    
+    return (scannedHand.length === 0 || deducedHand.length >= scannedHand.length);
+}
+
+function reconcileHandSlots(slots, deducedHand) {
+    const reconciled = Array(5).fill(null);
+    const remainingDeduced = [...deducedHand];
+    
+    // First pass: match slot cards that exist in deducedHand
+    for (let i = 0; i < slots.length; i++) {
+        const card = slots[i];
+        if (card !== null) {
+            const idx = remainingDeduced.indexOf(card);
+            if (idx !== -1) {
+                reconciled[i] = card;
+                remainingDeduced.splice(idx, 1);
+            }
+        }
+    }
+    
+    // Second pass: fill empty slots with remaining deduced cards
+    for (let i = 0; i < reconciled.length; i++) {
+        if (reconciled[i] === null && remainingDeduced.length > 0) {
+            reconciled[i] = remainingDeduced.shift();
+        }
+    }
+    
+    return reconciled.filter(v => v !== null);
+}
+
+function buildEffectiveDeck(remainingDeck, hand) {
+    const deck = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    for (let bp = 1; bp <= 5; bp++) {
+        deck[bp] = remainingDeck[bp] || 0;
+    }
+    if (hand && Array.isArray(hand)) {
+        hand.forEach(v => {
+            if (v >= 1 && v <= 5) {
+                deck[v]++;
+            }
+        });
+    }
+    return deck;
 }

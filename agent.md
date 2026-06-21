@@ -1,4 +1,4 @@
-﻿# Trial of Swordmancy Simulator - Developer & Agent Guide
+# Trial of Swordmancy Simulator - Developer & Agent Guide
 
 Du an nay la cong cu gia lap va toi uu hoa loi choi cho che do **Trial of Swordmancy** trong game Arknights: Endfield. Du an gom hai phan chinh: **Web Simulator** (chay tren trinh duyet) va **Electron Live Assistant** (chay duoi dang app desktop de quet game thuc te).
 
@@ -89,14 +89,15 @@ File: `electron/config.js` - them profile resolution moi vao muc `resolutions`.
 
 ---
 
-## Current OCR Handoff Status (2026-06-19)
+## Current OCR Handoff & Auto-Correction Status (2026-06-22)
 
-- Card order bug root cause: compact hand OCR lost slot positions; `deducedHand` is sorted by BP and cannot represent draw order.
-- Current fix keeps 5 fixed slots from OCR, for example `[2, 5, 1, null, null]`, then compacts only at render/solver boundary.
-- `lastScannedSlots` is the raw scan state used when rerunning solver after preset/stepper/free-trial changes.
-- `reconcileHandSlots(scannedSlots, deducedHand)` keeps valid OCR slot positions first, then fills missing slots from `deducedHand`.
-- Current debug switch in `electron/assistant.js`: `DEBUG_SLOT_OCR_ONLY = true`.
-- While that switch is true, display uses pure slot OCR to expose real OCR failures.
-- Current card OCR still uses 3x3 grid-density plus temporary card-specific exceptions. This is fragile.
-- Recommended next OCR direction: replace card-slot digit classification with template matching for digits `1..5`.
-- Full handoff plan: `OCR_TEMPLATE_MATCHING_PLAN.md`.
+- **Hand Reconcile & Correction**:
+  - `reconcileHandSlots(scannedSlots, deducedHand)` strictly aligns the hand slots with the deduced starting deck difference, stripping out any phantom cards (slot OCR false positives).
+  - `shouldUseDeducedHand` intelligently resolves slot-OCR vs. deck-diff conflicts by using the cyan-highlighted total score (`gameScore`) as a checksum. If the deduced hand's score matches `gameScore` while the slot OCR doesn't, it uses the deduced hand to auto-correct the hand.
+  - Validation checks (`validateScanState`) are run against the reconciled hand, letting corrected scans pass validation on the first attempt without unnecessary retries.
+- **Commit Guards**:
+  - The application strictly prevents committing scan states when the validation returns `inactive` or `retry` (when retries are exhausted). This stops the app from polluting the solver with invalid states (e.g. displaying a deck of `1-1-1-2-2` when on a dark desktop screen).
+- **Scanning Reliability**:
+  - Expanded `doublesRegion` width to 25px (`xEnd: 1493` in 2K config) to match attemptsRegion. This provides generous margins for scaling and prevents digit clipping at lower resolutions.
+  - Removed the `isDoubleSwitchPresent` conditional guard around doubles remaining scanning. The doubles digit in the top header is static and always visible, so it is scanned directly in Rewarded mode.
+  - Resolution-adaptive noise filtering was implemented in `classifySmallUiDigitFromCrop`. The minimum component pixel count is scaled quadratically: $\text{minCount} = \max(8, \text{round}(30 \times \text{scale}^2))$. This filters out small desktop noises while guaranteeing real digits are matched with 100% confidence.

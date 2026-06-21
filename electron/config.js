@@ -83,9 +83,48 @@ const CONFIG = {
             doublesRegion: {
                 xStart: 1468,
                 yStart: 114,
-                xEnd: 1478,
+                xEnd: 1493,
                 yEnd: 134
-            }
+            },
+
+            // Tọa độ các vùng watch regions phục vụ Live Detection
+            trialAnchor: {
+                x: 980,
+                y: 80,
+                width: 620,
+                height: 80
+            },
+            scoreRewardBand: {
+                x: 80,
+                y: 980,
+                width: 1980,
+                height: 170
+            },
+            controlBand: {
+                x: 1050,
+                y: 1210,
+                width: 1380,
+                height: 150
+            },
+            deckPanel: {
+                x: 2130,
+                y: 170,
+                width: 380,
+                height: 560
+            },
+            scoreColumns: [
+                { x: 397, y: 1050 },
+                { x: 555, y: 1050 },
+                { x: 713, y: 1050 },
+                { x: 872, y: 1050 },
+                { x: 1030, y: 1050 },
+                { x: 1188, y: 1050 },
+                { x: 1347, y: 1050 },
+                { x: 1505, y: 1050 },
+                { x: 1663, y: 1050 },
+                { x: 1822, y: 1050 },
+                { x: 1980, y: 1050 }
+            ]
         }
     }
 };
@@ -159,6 +198,39 @@ function scaleConfig(baseConfig, scale, targetW, targetH) {
         xEnd: scaleVal(baseConfig.doublesRegion.xEnd),
         yEnd: scaleVal(baseConfig.doublesRegion.yEnd)
     };
+
+    const scaledTrialAnchor = {
+        x: scaleVal(baseConfig.trialAnchor.x),
+        y: scaleVal(baseConfig.trialAnchor.y),
+        width: scaleVal(baseConfig.trialAnchor.width),
+        height: scaleVal(baseConfig.trialAnchor.height)
+    };
+
+    const scaledScoreRewardBand = {
+        x: scaleVal(baseConfig.scoreRewardBand.x),
+        y: scaleVal(baseConfig.scoreRewardBand.y),
+        width: scaleVal(baseConfig.scoreRewardBand.width),
+        height: scaleVal(baseConfig.scoreRewardBand.height)
+    };
+
+    const scaledControlBand = {
+        x: scaleVal(baseConfig.controlBand.x),
+        y: scaleVal(baseConfig.controlBand.y),
+        width: scaleVal(baseConfig.controlBand.width),
+        height: scaleVal(baseConfig.controlBand.height)
+    };
+
+    const scaledDeckPanel = {
+        x: scaleVal(baseConfig.deckPanel.x),
+        y: scaleVal(baseConfig.deckPanel.y),
+        width: scaleVal(baseConfig.deckPanel.width),
+        height: scaleVal(baseConfig.deckPanel.height)
+    };
+    
+    const scaledScoreColumns = baseConfig.scoreColumns ? baseConfig.scoreColumns.map(sc => ({
+        x: scaleVal(sc.x),
+        y: scaleVal(sc.y)
+    })) : [];
     
     return {
         width: targetW,
@@ -171,7 +243,12 @@ function scaleConfig(baseConfig, scale, targetW, targetH) {
         doubleSwitchCapsule: scaledDoubleSwitchCapsule,
         bracket: scaledBracket,
         attemptsRegion: scaledAttemptsRegion,
-        doublesRegion: scaledDoublesRegion
+        doublesRegion: scaledDoublesRegion,
+        trialAnchor: scaledTrialAnchor,
+        scoreRewardBand: scaledScoreRewardBand,
+        controlBand: scaledControlBand,
+        deckPanel: scaledDeckPanel,
+        scoreColumns: scaledScoreColumns
     };
 }
 

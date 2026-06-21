@@ -8,6 +8,7 @@
 let solver = null;
 let currentHand = [];
 let isDoubled = false;
+let doubledAtIndex = -1; // Index of the card that was doubled
 let accumulatedSessionReward = 0; // Cumulative reward of current simulator session
 let stateHistory = []; // Stack for undo functionality
 let trialCompletionTimer = null; // Reference to completion auto-advance timer
@@ -61,10 +62,12 @@ const suggestionHeader = document.getElementById('suggestion-header');
 const suggestionValue = document.getElementById('suggestion-value');
 const suggestionReason = document.getElementById('suggestion-reason');
 
-const evValState = document.getElementById('ev-val-state');
+const statReward = document.getElementById('stat-reward');
 const evValDraw = document.getElementById('ev-val-draw');
 const evValStop = document.getElementById('ev-val-stop');
 const evValAbandon = document.getElementById('ev-val-abandon');
+const evValDouble = document.getElementById('ev-val-double');
+const evRowDouble = document.getElementById('ev-row-double');
 
 const mcDaysInput = document.getElementById('mc-days');
 const mcResultsTbody = document.getElementById('mc-results-tbody');
@@ -219,6 +222,7 @@ function saveWikiDeckCache(decks, source) {
 function resetHandState() {
     currentHand = [];
     isDoubled = false;
+    doubledAtIndex = -1;
     stateHistory = []; // Clear undo history for new trial
     if (btnUndo) btnUndo.disabled = true;
     renderHand();
@@ -229,6 +233,7 @@ function pushStateToHistory() {
     stateHistory.push({
         hand: [...currentHand],
         isDoubled: isDoubled,
+        doubledAtIndex: doubledAtIndex,
         attempts: stateAttempts.value,
         freeAbandons: stateFreeAbandons.value,
         doubles: stateDoubles.value,
@@ -255,6 +260,7 @@ function undoLastAction() {
     const previousState = stateHistory.pop();
     currentHand = previousState.hand;
     isDoubled = previousState.isDoubled;
+    doubledAtIndex = previousState.doubledAtIndex !== undefined ? previousState.doubledAtIndex : -1;
     stateAttempts.value = previousState.attempts;
     stateFreeAbandons.value = previousState.freeAbandons;
     stateDoubles.value = previousState.doubles;
@@ -603,11 +609,12 @@ function selectCard(val) {
 // Perform reward doubling
 function performDouble() {
     const doubles = parseInt(stateDoubles.value);
-    if (doubles <= 0 || isDoubled || currentHand.length !== 2) return;
+    if (doubles <= 0 || isDoubled || currentHand.length < 1 || currentHand.length > 2) return;
 
     pushStateToHistory();
     stateDoubles.value = doubles - 1;
     isDoubled = true;
+    doubledAtIndex = currentHand.length - 1;
     showToast("Kích hoạt nhân đôi thành công!");
     
     // Rerender last card to show multiplier
@@ -718,7 +725,7 @@ function renderHand() {
                     </div>
                     <div class="card-footer">
                         <span class="card-index">#0${idx + 1}</span>
-                        <span class="card-multiplier">${isDoubled && idx === 1 ? 'x2' : ''}</span>
+                        <span class="card-multiplier">${isDoubled && idx === doubledAtIndex ? 'x2' : ''}</span>
                     </div>
                 </div>
             </div>
@@ -758,7 +765,7 @@ function updateUI() {
     // Handle button disabled rules
     btnDraw.disabled = (a <= 0 || currentHand.length >= 5);
     btnDrawRandom.disabled = (a <= 0 || currentHand.length >= 5);
-    btnDouble.disabled = (a <= 0 || currentHand.length !== 2 || isDoubled || d <= 0);
+    btnDouble.disabled = (a <= 0 || currentHand.length < 1 || currentHand.length > 2 || isDoubled || d <= 0);
     btnStop.disabled = (a <= 0 || currentHand.length === 0);
     btnAbandon.disabled = (a <= 0 || currentHand.length === 0);
     btnUndo.disabled = (stateHistory.length === 0);
@@ -798,7 +805,7 @@ function updateUI() {
     // Call mathematical solver
     if (a > 0) {
         const advice = solver.getBestAction(a, f, d, currentHand, isDoubled);
-        renderAdvice(advice);
+        renderAdvice(advice, a, f, d);
     } else {
         // No attempts left
         renderAdvice({
@@ -818,7 +825,7 @@ function updateUI() {
 }
 
 // Render dynamic mathematical advice
-function renderAdvice(advice) {
+function renderAdvice(advice, a = 0, f = 0, d = 0) {
     const action = advice.action;
     const ev = advice.ev;
     const details = advice.details;
@@ -831,37 +838,49 @@ function renderAdvice(advice) {
         suggestionValue.innerText = "HẾT LƯỢT ĐẤU";
         suggestionReason.innerText = `Hôm nay bạn đã hoàn thành việc cày tiền. Tổng cộng thu hoạch: ${accumulatedSessionReward.toLocaleString()} Wuling Stock Bills.`;
         
-        evValState.innerText = "-";
+        if (statReward) statReward.innerText = "-";
         evValDraw.innerText = "-";
         evValStop.innerText = "-";
         evValAbandon.innerText = "-";
+        if (evValDouble) evValDouble.innerText = "-";
+        if (evRowDouble) evRowDouble.style.display = 'none';
         
         resetProbBars();
         return;
     }
 
+    // Calculate baseline S for Net EV
+    const S = a > 0 ? solver.solve(a - 1, f, d, [], false) : 0;
+
     // Render EV values
-    evValState.innerText = `${Math.round(ev).toLocaleString()} Bills`;
-    evValDraw.innerText = details.evDraw ? `${Math.round(details.evDraw).toLocaleString()} Bills` : "Không khả thi";
-    evValStop.innerText = details.evStop ? `${Math.round(details.evStop).toLocaleString()} Bills` : "Không khả thi";
-    evValAbandon.innerText = details.evAbandon ? `${Math.round(details.evAbandon).toLocaleString()} Bills` : "Không khả thi";
+    if (statReward) statReward.innerText = `${Math.round(ev).toLocaleString()} Bills`;
+    evValDraw.innerText = (details.evDraw !== null && details.evDraw !== undefined) ? `${Math.round(details.evDraw - S).toLocaleString()} Bills` : "Không khả thi";
+    evValStop.innerText = (details.evStop !== null && details.evStop !== undefined) ? `${Math.round(details.evStop - S).toLocaleString()} Bills` : "Không khả thi";
+    evValAbandon.innerText = (details.evAbandon !== null && details.evAbandon !== undefined) ? `${Math.round(details.evAbandon - S).toLocaleString()} Bills` : "Không khả thi";
+
+    // EV Double (x2)
+    const isDoubleAvailable = (currentHand.length >= 1 && currentHand.length <= 2 && !isDoubled && d > 0);
+    evValDouble.innerText = (isDoubleAvailable && details.evDouble !== null && details.evDouble !== undefined) 
+        ? `${Math.round(details.evDouble - S).toLocaleString()} Bills` 
+        : "Không khả thi";
 
     // Set row visual highlights
     document.getElementById('ev-row-draw').className = 'ev-row' + (action === 'Draw' ? ' best-action' : '');
     document.getElementById('ev-row-stop').className = 'ev-row' + (action === 'Stop' ? ' best-action stop-action' : '');
     document.getElementById('ev-row-abandon').className = 'ev-row' + (action === 'Abandon' ? ' best-action abandon-action' : '');
+    document.getElementById('ev-row-double').className = 'ev-row' + (action === 'Double' ? ' best-action' : '');
 
     // Render suggestions text and box class
     if (action === 'Draw') {
         suggestionValue.innerText = "RÚT TIẾP (DRAW)";
         suggestionBox.classList.add('suggest-draw'); // uses default border
 
-        let reason = `Thuật toán khuyên bạn nên <strong>BỐC BÀI</strong>. Kỳ vọng thu nhập của việc rút là <strong>${Math.round(details.evDraw).toLocaleString()} Bills</strong>`;
+        let reason = `Thuật toán khuyên bạn nên <strong>BỐC BÀI</strong>. Kỳ vọng thu nhập của việc rút là <strong>${Math.round(details.evDraw - S).toLocaleString()} Bills</strong>`;
         if (details.evStop) {
-            reason += `, cao hơn dừng lại (${Math.round(details.evStop).toLocaleString()} Bills)`;
+            reason += `, cao hơn dừng lại (${Math.round(details.evStop - S).toLocaleString()} Bills)`;
         }
         if (details.evAbandon) {
-            reason += ` và bỏ bài (${Math.round(details.evAbandon).toLocaleString()} Bills)`;
+            reason += ` và bỏ bài (${Math.round(details.evAbandon - S).toLocaleString()} Bills)`;
         }
         reason += `.`;
         suggestionReason.innerHTML = reason;
@@ -870,9 +889,9 @@ function renderAdvice(advice) {
         suggestionValue.innerText = "DỪNG LẠI (STOP)";
         suggestionBox.classList.add('suggest-stop');
 
-        let reason = `Thuật toán khuyên bạn nên <strong>DỪNG LẠI</strong> in-game để chiến đấu. Kỳ vọng dừng là <strong>${Math.round(details.evStop).toLocaleString()} Bills</strong>`;
+        let reason = `Thuật toán khuyên bạn nên <strong>DỪNG LẠI</strong> in-game để chiến đấu. Kỳ vọng dừng là <strong>${Math.round(details.evStop - S).toLocaleString()} Bills</strong>`;
         if (details.evDraw) {
-            reason += `, cao hơn tiếp tục rút (${Math.round(details.evDraw).toLocaleString()} Bills)`;
+            reason += `, cao hơn tiếp tục rút (${Math.round(details.evDraw - S).toLocaleString()} Bills)`;
         }
         reason += `. Tránh mạo hiểm vì bạn đang ở điểm tối ưu.`;
         suggestionReason.innerHTML = reason;
@@ -881,14 +900,14 @@ function renderAdvice(advice) {
         suggestionValue.innerText = "TỪ BỎ (ABANDON)";
         suggestionBox.classList.add('suggest-abandon');
 
-        let reason = `Tay bài hiện tại có giá trị kỳ vọng quá thấp. Bạn nên chọn <strong>TỪ BỎ (ABANDON)</strong> in-game để reset bộ bài và chơi tay mới. EV của tay mới là <strong>${Math.round(details.evAbandon).toLocaleString()} Bills</strong>`;
+        let reason = `Tay bài hiện tại có giá trị kỳ vọng quá thấp. Bạn nên chọn <strong>TỪ BỎ (ABANDON)</strong> in-game để reset bộ bài và chơi tay mới. EV của tay mới là <strong>${Math.round(details.evAbandon - S).toLocaleString()} Bills</strong>`;
         suggestionReason.innerHTML = reason;
 
     } else if (action === 'Double') {
         suggestionValue.innerText = "BẬT NHÂN ĐÔI (DOUBLE)";
         suggestionBox.classList.add('suggest-double');
 
-        let reason = `Bạn nên kích hoạt <strong>NHÂN ĐÔI (DOUBLE)</strong> in-game trước khi làm hành động tiếp theo. Kỳ vọng EV khi nhân đôi tăng vọt lên <strong>${Math.round(details.evDouble).toLocaleString()} Bills</strong>.`;
+        let reason = `Bạn nên kích hoạt <strong>NHÂN ĐÔI (DOUBLE)</strong> in-game trước khi làm hành động tiếp theo. Kỳ vọng EV khi nhân đôi tăng vọt lên <strong>${Math.round(details.evDouble - S).toLocaleString()} Bills</strong>.`;
         suggestionReason.innerHTML = reason;
     }
 

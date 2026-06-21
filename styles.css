@@ -1,10 +1,10 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Orbitron:wght@500;700;900&display=swap');
 
 :root {
-    --bg-main: #0a0b0d;
-    --bg-card: #121418;
-    --bg-card-hover: #181b21;
-    --border-color: #242933;
+    --bg-main: #181b24;
+    --bg-card: #242936;
+    --bg-card-hover: #2f3647;
+    --border-color: #3d455c;
     
     --color-orange: #ff6a00;
     --color-orange-glow: rgba(255, 106, 0, 0.4);
@@ -44,7 +44,7 @@ body {
 
 /* App Header */
 header {
-    background: rgba(10, 11, 13, 0.8);
+    background: rgba(24, 27, 36, 0.85);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
     border-bottom: 1px solid var(--border-color);
@@ -158,7 +158,7 @@ label {
 
 select, input {
     width: 100%;
-    background: #08090b;
+    background: var(--bg-main);
     border: 1px solid var(--border-color);
     border-radius: 4px;
     color: var(--text-primary);
@@ -241,7 +241,7 @@ main {
 
 .stat-box {
     flex: 1;
-    background: #08090b;
+    background: var(--bg-main);
     border: 1px solid var(--border-color);
     border-radius: 6px;
     padding: 0.75rem 1rem;
@@ -278,7 +278,7 @@ main {
 /* Playing Table Grid */
 .play-table {
     min-height: 280px;
-    background: #0b0c0f;
+    background: var(--bg-main);
     border: 1px solid var(--border-color);
     border-radius: 8px;
     position: relative;
@@ -288,7 +288,7 @@ main {
     align-items: center;
     padding: 2rem;
     background-image: 
-        radial-gradient(ellipse at 50% 50%, rgba(20, 24, 30, 0.8) 0%, rgba(10, 11, 13, 0.9) 100%),
+        radial-gradient(ellipse at 50% 50%, rgba(36, 41, 54, 0.85) 0%, rgba(24, 27, 36, 0.95) 100%),
         linear-gradient(rgba(255, 106, 0, 0.03) 1px, transparent 1px);
     background-size: 100% 100%, 100% 20px;
 }
@@ -348,7 +348,7 @@ main {
 }
 
 .card-back {
-    background: #0f1115;
+    background: #1c1f2a;
     background-image: 
         linear-gradient(45deg, transparent 45%, var(--border-color) 45%, var(--border-color) 55%, transparent 55%),
         linear-gradient(-45deg, transparent 45%, var(--border-color) 45%, var(--border-color) 55%, transparent 55%);
@@ -356,7 +356,7 @@ main {
     display: flex;
     justify-content: center;
     align-items: center;
-    border-color: #1f232b;
+    border-color: #2e3547;
 }
 
 .card-back::after {
@@ -370,7 +370,7 @@ main {
 }
 
 .card-front {
-    background: #14171d;
+    background: var(--bg-card);
     transform: rotateY(180deg);
     border-color: var(--color-card-border, var(--border-color));
 }
@@ -470,7 +470,7 @@ main {
     padding: 0.8rem 1.5rem;
     border-radius: 4px;
     border: 1px solid var(--border-color);
-    background: #14171d;
+    background: var(--bg-card);
     color: var(--text-primary);
     cursor: pointer;
     transition: all 0.2s ease;
@@ -680,7 +680,7 @@ main {
 .prob-bar-container {
     flex-grow: 1;
     height: 8px;
-    background: #08090b;
+    background: var(--bg-main);
     border-radius: 4px;
     overflow: hidden;
     border: 1px solid rgba(255, 255, 255, 0.03);
@@ -936,7 +936,7 @@ main {
     position: fixed;
     bottom: 2rem;
     right: 2rem;
-    background: #121418;
+    background: var(--bg-card);
     border: 1px solid var(--color-orange);
     border-radius: 4px;
     padding: 0.75rem 1.5rem;
@@ -1034,7 +1034,7 @@ main {
 .number-stepper {
     display: flex;
     align-items: center;
-    background: #08090b;
+    background: var(--bg-main);
     border: 1px solid var(--border-color);
     border-radius: 4px;
     overflow: hidden;
@@ -1125,7 +1125,7 @@ main {
 .earnings-progress-bar {
     width: 100%;
     height: 6px;
-    background: #08090b;
+    background: var(--bg-main);
     border-radius: 3px;
     overflow: hidden;
     border: 1px solid rgba(255, 255, 255, 0.02);

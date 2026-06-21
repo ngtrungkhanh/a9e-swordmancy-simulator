@@ -180,6 +180,10 @@
                                 <span class="stat-label">Bài trên tay</span>
                                 <span class="stat-value" id="stat-hand-size">0 / 5</span>
                             </div>
+                            <div class="stat-box" id="card-stat-reward">
+                                <span class="stat-label">Giá trị kỳ vọng (EV)</span>
+                                <span class="stat-value gold-glow" id="stat-reward">0</span>
+                            </div>
                             <div class="stat-box">
                                 <span class="stat-label">Tiền thưởng hiện tại</span>
                                 <span class="stat-value gold-glow" id="stat-current-reward">0</span>
@@ -246,12 +250,8 @@
 
                         <!-- Expected Value Details -->
                         <div class="panel" style="padding: 1rem; border-color: rgba(255, 255, 255, 0.05); box-shadow: none;">
-                            <div class="panel-title" style="font-size: 0.8rem; margin-bottom: 0.75rem;">Phân Tích EV Dự kiến</div>
+                            <div class="panel-title" style="font-size: 0.8rem; margin-bottom: 0.75rem;">Phân Tích EV Dự kiến (Hiệu quả lượt này)</div>
                             <div class="ev-details">
-                                <div class="ev-row" id="ev-row-state">
-                                    <span class="ev-label">EV Trạng thái hiện tại:</span>
-                                    <span class="ev-val" id="ev-val-state">-</span>
-                                </div>
                                 <div class="ev-row" id="ev-row-draw">
                                     <span class="ev-label">EV Rút tiếp (Draw):</span>
                                     <span class="ev-val" id="ev-val-draw">-</span>
@@ -263,6 +263,10 @@
                                 <div class="ev-row" id="ev-row-abandon">
                                     <span class="ev-label">EV Từ bỏ (Abandon):</span>
                                     <span class="ev-val" id="ev-val-abandon">-</span>
+                                </div>
+                                <div class="ev-row" id="ev-row-double">
+                                    <span class="ev-label">EV Nhân đôi (Double):</span>
+                                    <span class="ev-val" id="ev-val-double">-</span>
                                 </div>
                             </div>
                         </div>

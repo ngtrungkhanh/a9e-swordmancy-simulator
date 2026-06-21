@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('electronAPI', {
     requestScreenshot: () => ipcRenderer.send('request-screenshot'),
     selectFile: () => ipcRenderer.invoke('select-file'),
+    resolveCaptureSource: (forceScreen) => ipcRenderer.invoke('resolve-capture-source', forceScreen),
     onScreenshotCaptured: (callback) => {
         ipcRenderer.on('screenshot-captured', (event, data) => callback(data));
     },
@@ -17,6 +18,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
     onForceScan: (callback) => {
         ipcRenderer.on('force-scan', () => callback());
+    },
+    onWindowModeChanged: (callback) => {
+        ipcRenderer.on('window-mode-changed', (event, mode) => callback(mode));
     },
     log: (msg) => ipcRenderer.send('log-from-renderer', msg),
     setWindowMode: (mode) => ipcRenderer.send('set-window-mode', mode),
