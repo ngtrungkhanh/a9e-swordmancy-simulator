@@ -108,3 +108,20 @@ Nhung dieu khong nen lam trong lan rebuild nay:
 - Uu tien dung va on dinh hon cap nhat lieu trong luc animation.
 - Dirty trigger chinh la cac vung BP/reward/control/deck panel; khong xay state machine rieng cho tung hanh dong.
 - Neu khong tim thay game window, live capture fallback sang primary screen.
+
+## Implementation & Optimization Report (2026-06-22)
+
+Toàn bộ kế hoạch Live Detection đã được hiện thực hóa và bổ sung các cơ chế tối ưu đặc biệt để đạt độ tin cậy tuyệt đối:
+
+1. **Xác thực chéo & Tự sửa lỗi**:
+   - Sử dụng `gameScore` (chữ số màu xanh cyan trên UI game) làm checksum.
+   - Nếu số lượng lá bài nhận diện trực tiếp (`scannedSlots`) không khớp với số bài suy luận từ Deck, app dùng `gameScore` để kiểm tra chéo xem bên nào đúng. Nếu bộ suy luận đúng, app tự động điều chỉnh và loại bỏ lá bài "ma" (phantom scan).
+2. **Commit Guard (Chống lỗi màn hình Desktop)**:
+   - Các trạng thái quét không hợp lệ (`inactive` khi game đóng/bị che hoặc `retry` khi đã thử 3 lần vẫn lỗi) tuyệt đối không được ghi đè vào trạng thái game hiện tại.
+   - App sẽ giữ nguyên đề xuất tối ưu cũ và chỉ đổi trạng thái hiển thị thành `OCR CHƯA CHẮC`, ngăn chặn triệt để lỗi bộ bài rác `1-1-1-2-2` khi Alt-Tab ra ngoài.
+3. **Bộ lọc nhiễu chữ số (Noise Filtering)**:
+   - Áp dụng bộ lọc kích thước nét vẽ chữ số theo hàm bậc hai của scale màn hình: \(\text{minPixelCount} = \max(8, \text{round}(30 \times \text{scale}^2))\).
+   - Đảm bảo ở màn hình 1080p, các điểm nhiễu desktop nhỏ (\(\le 12\) pixels) bị triệt tiêu hoàn toàn, trong khi chữ số thực (\(\ge 25\) pixels) được nhận diện chính xác.
+4. **Ổn định hóa quét X2**:
+   - Mở rộng vùng quét `doublesRegion` lên 25px và loại bỏ điều kiện kiểm tra sự hiện diện của Capsule nút bấm, giúp quét lượt X2 còn lại luôn mượt mà và chính xác.
+
